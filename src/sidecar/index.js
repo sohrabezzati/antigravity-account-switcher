@@ -401,10 +401,16 @@ async function main() {
             if (r && typeof r.navigate === 'function') {
               if (target.cascadeId) {
                 console.log('[switcher] Restoring active cascade conversation:', target.cascadeId);
-                await r.navigate({
-                  to: "/manager-layout/manager-landing-layout/c/$cascadeId",
-                  params: { cascadeId: target.cascadeId }
-                });
+                try {
+                  await r.navigate({
+                    to: "/c/$cascadeId",
+                    params: { cascadeId: target.cascadeId }
+                  });
+                } catch {
+                  await r.navigate({
+                    to: "/c/" + target.cascadeId
+                  });
+                }
                 return true;
               } else if (target.pathname && target.pathname !== '/') {
                 console.log('[switcher] Restoring active path:', target.pathname);
