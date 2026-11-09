@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const args = process.argv.slice(2);
 const command = args[0];
 
-function makeAsciiBar(pct, width = 18) {
+function makeAsciiBar(pct, width = 14) {
   const safePct = Math.max(0, Math.min(100, Math.round(pct)));
   const filled = Math.round((safePct / 100) * width);
   const empty = width - filled;
@@ -24,17 +24,48 @@ function makeAsciiBar(pct, width = 18) {
 }
 
 /**
+ * Retrieves freshest live accounts list (queries sidecar API first if online, else falls back to local poller).
+ */
+async function getAccountsLive() {
+  try {
+    const res = await fetch('http://127.0.0.1:51444/api/accounts', { signal: AbortSignal.timeout(1500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.accounts && data.accounts.length > 0) {
+        return data.accounts;
+      }
+    }
+  } catch {}
+  return await getAllAccountsQuotaSummary();
+}
+
+/**
+ * Prints the live three-model quota summary (Gemini, Claude/GPT, Argon) for an account.
+ */
+function printThreeModelQuotas(active) {
+  if (!active) return;
+  const g = active.modelQuotas?.gemini || { fiveHourPercent: active.fiveHourPercent ?? 100, weeklyPercent: active.weeklyPercent ?? 100 };
+  const c = active.modelQuotas?.claudeGpt || { fiveHourPercent: 100, weeklyPercent: 100 };
+  const ar = active.modelQuotas?.argon || { weeklyPercent: 100 };
+
+  console.log('\n📊 Live Model Quotas:');
+  console.log(`  🔷 Gemini (Flash / Pro):    [${makeAsciiBar(g.fiveHourPercent)}] 5H: ${String(g.fiveHourPercent).padStart(3)}%  |  [${makeAsciiBar(g.weeklyPercent)}] Weekly: ${String(g.weeklyPercent).padStart(3)}% (${g.weeklyCountdownText || 'Active'})`);
+  console.log(`  🟣 Claude & GPT 3rd-Party:  [${makeAsciiBar(c.fiveHourPercent ?? 100)}] 5H: ${String(c.fiveHourPercent ?? 100).padStart(3)}%  |  [${makeAsciiBar(c.weeklyPercent)}] Weekly: ${String(c.weeklyPercent).padStart(3)}% (${c.weeklyCountdownText || 'Active'})`);
+  console.log(`  ⚡ Gemini 4 Argon:          [${makeAsciiBar(ar.weeklyPercent)}] Weekly: ${String(ar.weeklyPercent).padStart(3)}% (${ar.weeklyCountdownText || 'Active'})`);
+}
+
+/**
  * Zero-config smart runner:
  * - If not installed -> installs automatically and hot-reloads Antigravity.
  * - If installed & outdated -> updates automatically and hot-reloads Antigravity.
- * - If installed & up-to-date -> refreshes the live UI and confirms status.
+ * - If installed & up-to-date -> displays live multi-model quotas and confirms status.
  */
 async function dispatchSmart() {
   const currentCliVer = getCurrentVersion();
   const installedVer = getInstalledVersion();
 
   console.log(`\n🪐 Antigravity Account Switcher (v${currentCliVer})`);
-  console.log('──────────────────────────────────────────────────');
+  console.log('────────────────────────────────────────────────────────────────────────');
 
   if (!installedVer) {
     console.log('📦 Plugin is not installed yet. Installing into Antigravity...');
@@ -53,14 +84,17 @@ async function dispatchSmart() {
     process.exit(0);
   }
 
-  console.log(`✅ Already up-to-date (v${installedVer}).`);
-  console.log('⚡ Syncing files and refreshing live plugin in Antigravity window...');
-  await install({ silent: true });
-  const reloaded = await triggerLiveReload();
-  if (reloaded) {
-    console.log('✨ Live hot-reload applied to active Antigravity window.');
-  }
-  console.log('🚀 Everything is ready and active!\n');
+  const accounts = await getAccountsLive();
+  const active = accounts.find(a => a.isActive) || accounts[0];
+
+  console.log(`Active Account: ${active ? `${active.label} (${active.email}) [Plan: ${active.plan || 'Free'}]` : 'None'}`);
+  printThreeModelQuotas(active);
+
+  console.log('\n💡 Quick commands:');
+  console.log('  • antigravity-account-switcher list     (Table view of all vault accounts)');
+  console.log('  • antigravity-account-switcher quota    (Detailed ASCII meters by model)');
+  console.log('  • antigravity-account-switcher switch   (Switch active account)');
+  console.log('────────────────────────────────────────────────────────────────────────\n');
   process.exit(0);
 }
 
@@ -104,11 +138,12 @@ async function run() {
       console.log(`Platform:       ${process.platform} (${process.arch})`);
       console.log(`Sidecar Server: ${sidecarOnline ? '🟢 ONLINE (Port 51444)' : '⚪ OFFLINE'}`);
 
-      const profiles = listProfiles();
-      console.log(`Vault Accounts: ${profiles.length} registered`);
-      const active = profiles.find(p => p.isActive);
+      const accounts = await getAccountsLive();
+      console.log(`Vault Accounts: ${accounts.length} registered`);
+      const active = accounts.find(p => p.isActive);
       if (active) {
         console.log(`Active Account: ${active.label} (${active.email}) [${active.plan || 'Pro'}]`);
+        printThreeModelQuotas(active);
       }
       console.log('===================================================================\n');
       return;
@@ -146,36 +181,42 @@ async function run() {
     }
 
     case 'list': {
-      const accounts = await getAllAccountsQuotaSummary();
-      console.log('\n======================== Antigravity Accounts ========================');
+      const accounts = await getAccountsLive();
+      console.log('\n====================================== Antigravity Accounts ======================================');
       console.table(accounts.map(a => {
         const g = a.modelQuotas?.gemini || {};
         const c = a.modelQuotas?.claudeGpt || {};
         const ar = a.modelQuotas?.argon || {};
+        const gemini5h = g.fiveHourPercent ?? a.fiveHourPercent ?? 100;
+        const geminiWk = g.weeklyPercent ?? a.weeklyPercent ?? 100;
+        const claude5h = c.fiveHourPercent ?? 100;
+        const claudeWk = c.weeklyPercent ?? 100;
+        const argonWk = ar.weeklyPercent ?? 100;
+
         return {
           ID: a.id,
           Label: a.label,
           Email: a.email,
           Plan: a.plan,
-          'Gemini (5h/Wk)': `${g.fiveHourPercent ?? a.fiveHourPercent ?? 100}% / ${g.weeklyPercent ?? a.weeklyPercent ?? 100}%`,
-          'Claude & GPT': `${c.weeklyPercent ?? 100}%`,
-          'Argon': `${ar.weeklyPercent ?? 100}%`,
+          'Gemini (5h/Wk)': `${gemini5h}% / ${geminiWk}%`,
+          'Claude & GPT (5h/Wk)': `${claude5h}% / ${claudeWk}%`,
+          'Argon (Wk)': `${argonWk}%`,
           Status: a.isActive ? 'ACTIVE' : a.status.toUpperCase(),
           Reset: a.fiveHourCountdownText || a.resetCountdownText
         };
       }));
-      console.log('======================================================================\n');
+      console.log('==================================================================================================\n');
       process.exit(0);
       break;
     }
 
     case 'quota':
     case 'quotas': {
-      const accounts = await getAllAccountsQuotaSummary();
+      const accounts = await getAccountsLive();
       const active = accounts.find(a => a.isActive) || accounts[0];
 
       if (!active) {
-        console.log('No registered accounts in vault. Use "npx antigravity-account-switcher snapshot" to add current session.');
+        console.log('No registered accounts in vault. Use "antigravity-account-switcher snapshot" to add current session.');
         process.exit(0);
       }
 
@@ -188,17 +229,17 @@ async function run() {
       console.log('────────────────────────────────────────────────────────────────────────');
 
       console.log('\n🔷 GEMINI MODELS (Gemini 2.5 Flash, Gemini 2.5 Pro)');
-      console.log(`  • 5-Hour Session: [${makeAsciiBar(g.fiveHourPercent)}] ${String(g.fiveHourPercent).padStart(3)}%  (${g.fiveHourCountdownText || active.fiveHourCountdownText || 'Ready'})`);
-      console.log(`  • Weekly Pool:    [${makeAsciiBar(g.weeklyPercent)}] ${String(g.weeklyPercent).padStart(3)}%  (${g.weeklyCountdownText || active.weeklyCountdownText || 'Active'})`);
+      console.log(`  • 5-Hour Session: [${makeAsciiBar(g.fiveHourPercent, 20)}] ${String(g.fiveHourPercent).padStart(3)}%  (${g.fiveHourCountdownText || active.fiveHourCountdownText || 'Ready'})`);
+      console.log(`  • Weekly Pool:    [${makeAsciiBar(g.weeklyPercent, 20)}] ${String(g.weeklyPercent).padStart(3)}%  (${g.weeklyCountdownText || active.weeklyCountdownText || 'Active'})`);
 
       console.log('\n🟣 CLAUDE & GPT MODELS (Claude 3.7 Sonnet, Claude 3.5 Opus, GPT-OSS)');
-      console.log(`  • 5-Hour Session: [${makeAsciiBar(c.fiveHourPercent)}] ${String(c.fiveHourPercent).padStart(3)}%  (${c.fiveHourCountdownText || 'Ready'})`);
-      console.log(`  • Weekly Pool:    [${makeAsciiBar(c.weeklyPercent)}] ${String(c.weeklyPercent).padStart(3)}%  (${c.weeklyCountdownText || 'Active'})`);
+      console.log(`  • 5-Hour Session: [${makeAsciiBar(c.fiveHourPercent ?? 100, 20)}] ${String(c.fiveHourPercent ?? 100).padStart(3)}%  (${c.fiveHourCountdownText || 'Ready'})`);
+      console.log(`  • Weekly Pool:    [${makeAsciiBar(c.weeklyPercent, 20)}] ${String(c.weeklyPercent).padStart(3)}%  (${c.weeklyCountdownText || 'Active'})`);
 
       console.log('\n⚡ GEMINI 4 ARGON (Dedicated Deep Reasoning WTU)');
-      console.log(`  • Weekly Limit:   [${makeAsciiBar(ar.weeklyPercent)}] ${String(ar.weeklyPercent).padStart(3)}%  (${ar.weeklyCountdownText || 'Active'})`);
+      console.log(`  • Weekly Limit:   [${makeAsciiBar(ar.weeklyPercent, 20)}] ${String(ar.weeklyPercent).padStart(3)}%  (${ar.weeklyCountdownText || 'Active'})`);
       if (ar.fiveHourPercent !== undefined && ar.fiveHourPercent < 100) {
-        console.log(`  • 5-Hour Limit:   [${makeAsciiBar(ar.fiveHourPercent)}] ${String(ar.fiveHourPercent).padStart(3)}%  (${ar.fiveHourCountdownText || 'Ready'})`);
+        console.log(`  • 5-Hour Limit:   [${makeAsciiBar(ar.fiveHourPercent, 20)}] ${String(ar.fiveHourPercent).padStart(3)}%  (${ar.fiveHourCountdownText || 'Ready'})`);
       }
 
       console.log('\n========================================================================\n');
@@ -310,18 +351,18 @@ async function run() {
 Antigravity Account Switcher CLI (Cross-Platform: Windows, macOS, Linux/Fedora)
 
 Zero-Config Usage:
-  npx antigravity-account-switcher          Smart action (installs, updates, or refreshes)
+  antigravity-account-switcher                  Shows active account & live multi-model quotas
 
 Subcommands:
-  npx antigravity-account-switcher status        Check daemon status & platform integration
-  npx antigravity-account-switcher list          Display registered accounts with separate model quotas
-  npx antigravity-account-switcher quota         Show rich breakdown for Gemini, Claude/GPT & Argon
-  npx antigravity-account-switcher switch <id>   Switch active Google account
-  npx antigravity-account-switcher snapshot      Save current Google session to vault
-  npx antigravity-account-switcher agy           Inspect antigravity-cli integration status
-  npx antigravity-account-switcher check-update  Check if newer release exists
-  npx antigravity-account-switcher start         Start background sidecar server
-  npx antigravity-account-switcher uninstall     Uninstall plugin from Antigravity
+  antigravity-account-switcher list             Display all accounts with Gemini, Claude/GPT, and Argon quotas
+  antigravity-account-switcher quota            Detailed ASCII meter breakdown by model family
+  antigravity-account-switcher status           Check daemon status & live model quotas
+  antigravity-account-switcher switch <id>      Switch active Google account
+  antigravity-account-switcher snapshot         Save current Google session to vault
+  antigravity-account-switcher agy              Inspect antigravity-cli integration status
+  antigravity-account-switcher check-update     Check if newer release exists
+  antigravity-account-switcher start            Start background sidecar server
+  antigravity-account-switcher uninstall        Uninstall plugin from Antigravity
 `);
       process.exit(0);
   }
