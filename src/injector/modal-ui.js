@@ -304,7 +304,7 @@
     }
 
     window.__AGY_OUTSIDE_HANDLER__ = (e) => {
-      if (!isPopoverOpen) return;
+      if (!isPopoverOpen || isActivatingSwitch) return;
       const target = e.target;
       const pop = document.getElementById('agy-account-switcher-popover');
       const trig = document.getElementById('agy-avatar-trigger-btn');
@@ -334,6 +334,7 @@
       window.__AGY_KEY_BOUND__ = true;
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isPopoverOpen) {
+          if (isActivatingSwitch) return;
           // If child dialogs are active, dismiss child dialog first
           const updateDlg = document.getElementById('agy-update-dialog');
           const confirmDlg = document.getElementById('agy-confirm-dialog');
@@ -402,6 +403,7 @@
   }
 
   function closePopover() {
+    if (isActivatingSwitch) return;
     const popover = document.getElementById('agy-account-switcher-popover');
     if (popover) popover.classList.remove('open');
     isPopoverOpen = false;
@@ -409,7 +411,7 @@
       clearInterval(openPopoverRefreshInterval);
       openPopoverRefreshInterval = null;
     }
-    hideConfirm();
+    hideConfirm(true);
     hideDeleteDialog();
   }
 
@@ -863,6 +865,7 @@
 
   // 9. Modal Dialogs: Switch, Delete, Relogin
   let switchWatchdogTimer = null;
+  let isActivatingSwitch = false;
 
   function showConfirm(accId, email) {
     const dialog = document.getElementById('agy-confirm-dialog');
@@ -879,6 +882,7 @@
       clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = null;
     }
+    isActivatingSwitch = false;
 
     box.innerHTML = `
       <h4 class="agy-confirm-title">Switch Account?</h4>
@@ -894,24 +898,44 @@
     const cancelBtn = document.getElementById('agy-confirm-cancel');
     const proceedBtn = document.getElementById('agy-confirm-proceed');
 
-    cancelBtn.onclick = hideConfirm;
+    cancelBtn.onclick = () => hideConfirm(true);
     proceedBtn.onclick = async () => {
-      proceedBtn.innerText = 'Switching...';
-      proceedBtn.disabled = true;
+      isActivatingSwitch = true;
 
-      // 8-second safety watchdog: resets button if request times out
+      if (box) {
+        box.innerHTML = `
+          <div class="agy-activating-box">
+            <div class="agy-activating-spinner-wrap">
+              <div class="agy-activating-spinner"></div>
+            </div>
+            <h4 class="agy-confirm-title" style="margin-bottom:6px;">Activating Account</h4>
+            <p class="agy-confirm-text" style="margin-bottom:12px;">
+              Connecting to <strong>${email}</strong>...<br>
+              <span style="font-size:11px;color:var(--agy-text-muted,#94a3b8);display:block;margin-top:4px;">
+                Preserving active chats and reloading credentials.
+              </span>
+            </p>
+            <div class="agy-activating-status-bar">
+              <div class="agy-activating-status-fill"></div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Safety watchdog: resets if switch takes longer than 15 seconds
       if (switchWatchdogTimer) clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = setTimeout(() => {
+        isActivatingSwitch = false;
         if (box) {
           box.innerHTML = `
             <h4 class="agy-confirm-title">Switch Account?</h4>
-            <p id="agy-confirm-text" class="agy-confirm-text">Switch request timed out. Please try again.</p>
-            <div class="agy-confirm-actions">
-              <button id="agy-confirm-cancel" class="agy-cancel-btn" onclick="window.__AGY_SWITCHER__?.requestSwitch && (document.getElementById('agy-confirm-dialog').style.display='none')">Close</button>
+            <p class="agy-confirm-text">Request took longer than expected. Please try again.</p>
+            <div class="agy-confirm-actions" style="margin-top:12px;">
+              <button class="agy-cancel-btn" onclick="window.__AGY_SWITCHER__?.hideConfirm(true)">Close</button>
             </div>
           `;
         }
-      }, 8000);
+      }, 15000);
 
       try {
         const res = await fetch(`${API_BASE}/api/switch`, {
@@ -920,47 +944,75 @@
           body: JSON.stringify({ id: accId, source: 'renderer' })
         });
         const data = await res.json();
+
         if (data.alreadyActive) {
-          if (switchWatchdogTimer) {
-            clearTimeout(switchWatchdogTimer);
-            switchWatchdogTimer = null;
-          }
-          hideConfirm();
+          isActivatingSwitch = false;
+          hideConfirm(true);
           showToast(`Account ${email} is already active`, 'info');
           await fetchAndRenderAccounts(true);
-        } else if (!res.ok) {
-          if (switchWatchdogTimer) {
-            clearTimeout(switchWatchdogTimer);
-            switchWatchdogTimer = null;
-          }
+          return;
+        }
+
+        if (!res.ok) {
+          isActivatingSwitch = false;
           alert('Switch notice: ' + (data.error || 'Switch failed'));
-          hideConfirm();
-        } else {
-          // Success: credentials updated cleanly with zero-downtime (active chats preserved!)
-          if (switchWatchdogTimer) {
-            clearTimeout(switchWatchdogTimer);
-            switchWatchdogTimer = null;
-          }
+          hideConfirm(true);
+          return;
+        }
 
-          if (box) {
-            box.innerHTML = `
-              <div style="text-align:center;padding:16px 8px;">
-                <div style="font-size:24px;margin-bottom:8px;">🚀</div>
-                <h4 style="margin:0 0 8px;font-size:15px;font-weight:600;color:var(--agy-text-main, #0f172a);">Activating Account</h4>
-                <p style="margin:0;font-size:12px;color:var(--agy-text-muted, #64748b);">Loaded credentials for <strong>${email}</strong>.<br>Activating session...</p>
-              </div>
-            `;
+        // Switch request accepted on backend.
+        // Language server restarts and Electron reconnects to the new port.
+        // Poll backend readiness until account becomes active or window unloads.
+        let pollCount = 0;
+        const maxPolls = 18; // up to 9 seconds
+        const pollInterval = setInterval(async () => {
+          if (window.__AGY_IS_UNLOADING__) {
+            clearInterval(pollInterval);
+            return;
           }
-          showToast(`Activating ${email}...`, 'info');
+          pollCount++;
+          try {
+            const checkRes = await fetch(`${API_BASE}/api/accounts`);
+            if (checkRes.ok) {
+              const checkData = await checkRes.json();
+              const active = checkData.accounts?.find(a => a.isActive);
+              if (active && (active.id === accId || (active.email && active.email.toLowerCase() === email.toLowerCase()))) {
+                clearInterval(pollInterval);
+                if (switchWatchdogTimer) {
+                  clearTimeout(switchWatchdogTimer);
+                  switchWatchdogTimer = null;
+                }
+                if (box) {
+                  box.innerHTML = `
+                    <div class="agy-activating-box">
+                      <div style="font-size:28px;margin-bottom:8px;">✅</div>
+                      <h4 class="agy-confirm-title" style="margin-bottom:6px;">Account Active!</h4>
+                      <p class="agy-confirm-text">Switched to <strong>${email}</strong></p>
+                    </div>
+                  `;
+                }
+                setTimeout(async () => {
+                  isActivatingSwitch = false;
+                  hideConfirm(true);
+                  showToast(`Switched active account to ${email}`, 'success');
+                  await fetchAndRenderAccounts(true);
+                  dismissTermsModal();
+                }, 600);
+                return;
+              }
+            }
+          } catch {}
 
-          // Daemon restarts and Electron reconnects to the new port; sidecar restores active route seamlessly.
-          setTimeout(async () => {
-            hideConfirm();
+          if (pollCount >= maxPolls) {
+            clearInterval(pollInterval);
+            isActivatingSwitch = false;
+            hideConfirm(true);
             showToast(`Switched active account to ${email}`, 'success');
             await fetchAndRenderAccounts(true);
             dismissTermsModal();
-          }, 1400);
-        }
+          }
+        }, 500);
+
       } catch (e) {
         if (window.__AGY_IS_UNLOADING__) return;
         if (switchWatchdogTimer) {
@@ -975,7 +1027,8 @@
             const checkData = await checkRes.json();
             const active = checkData.accounts?.find(a => a.isActive);
             if (active && (active.id === accId || (active.email && active.email.toLowerCase() === email.toLowerCase()))) {
-              hideConfirm();
+              isActivatingSwitch = false;
+              hideConfirm(true);
               showToast(`Switched active account to ${email}`, 'success');
               await fetchAndRenderAccounts(true);
               dismissTermsModal();
@@ -984,13 +1037,16 @@
           }
         } catch {}
 
+        isActivatingSwitch = false;
         alert('Switch failed: ' + e.message);
-        hideConfirm();
+        hideConfirm(true);
       }
     };
   }
 
-  function hideConfirm() {
+  function hideConfirm(force = false) {
+    if (isActivatingSwitch && !force) return;
+    isActivatingSwitch = false;
     if (switchWatchdogTimer) {
       clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = null;
@@ -1228,6 +1284,7 @@
       renderAccountCards(cachedAccounts);
     },
     requestSwitch: showConfirm,
+    hideConfirm: hideConfirm,
     requestDelete: showDeleteConfirm,
     requestRelogin: requestRelogin,
     refresh: fetchAndRenderAccounts,

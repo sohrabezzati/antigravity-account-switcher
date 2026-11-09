@@ -20,7 +20,7 @@ const PORT = 51444;
 const HOST = '127.0.0.1';
 
 let isSwitchingInProgress = false;
-let savedRouteToRestore = null;
+let savedRouteData = null;
 
 /**
  * Centralized, risk-free account switch pipeline:
@@ -46,10 +46,27 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
     // Step 0: Capture active project & conversation route before any restarts
     if (cdp && cdp.isConnected) {
       try {
-        const currentRoute = await cdp.evaluate('window.location.pathname + window.location.search + window.location.hash', true, 2000);
-        if (currentRoute && currentRoute !== '/') {
-          savedRouteToRestore = currentRoute;
-          logger.info('sidecar', `[SWITCH_ROUTE] Preserving active conversation route: ${savedRouteToRestore}`);
+        const routeInfo = await cdp.evaluate(`(() => {
+          try {
+            const r = window.__TSR_ROUTER__;
+            const tsrPathname = r?.state?.location?.pathname;
+            const tsrHref = r?.state?.location?.href;
+            const winPathname = window.location.pathname;
+            const match = r?.state?.matches?.find(m => m.routeId?.includes('$cascadeId') || m.params?.cascadeId);
+            const cascadeId = match?.params?.cascadeId || (winPathname.match(/\\/c\\/([a-zA-Z0-9_-]+)/) || [])[1] || null;
+            const targetPath = (tsrPathname && tsrPathname !== '/') ? tsrPathname : ((winPathname && winPathname !== '/') ? winPathname : tsrHref);
+            return {
+              cascadeId: cascadeId || null,
+              pathname: targetPath && targetPath !== '/' ? targetPath : null
+            };
+          } catch (e) {
+            return null;
+          }
+        })()`, true, 2000);
+
+        if (routeInfo && (routeInfo.cascadeId || routeInfo.pathname)) {
+          savedRouteData = routeInfo;
+          logger.info('sidecar', `[SWITCH_ROUTE] Preserving active conversation route: ${JSON.stringify(savedRouteData)}`);
         }
       } catch (err) {
         logger.warn('sidecar', `Could not capture active route: ${err.message}`);
@@ -371,19 +388,42 @@ async function main() {
   }
 
   async function restorePreservedRoute() {
-    if (savedRouteToRestore && savedRouteToRestore !== '/') {
-      const targetRoute = savedRouteToRestore;
-      savedRouteToRestore = null;
-      try {
-        logger.info('sidecar', `Restoring preserved conversation route: ${targetRoute}`);
-        await cdp.evaluate(`(() => {
-          if (window.location.pathname + window.location.search === '/') {
-            window.location.replace(window.location.origin + ${JSON.stringify(targetRoute)});
+    if (!savedRouteData) return;
+    const toRestore = { ...savedRouteData };
+    logger.info('sidecar', `Restoring preserved conversation route: ${JSON.stringify(toRestore)}`);
+
+    try {
+      await cdp.evaluate(`(async () => {
+        const target = ${JSON.stringify(toRestore)};
+        for (let attempt = 0; attempt < 30; attempt++) {
+          try {
+            const r = window.__TSR_ROUTER__;
+            if (r && typeof r.navigate === 'function') {
+              if (target.cascadeId) {
+                console.log('[switcher] Restoring active cascade conversation:', target.cascadeId);
+                await r.navigate({
+                  to: "/manager-layout/manager-landing-layout/c/$cascadeId",
+                  params: { cascadeId: target.cascadeId }
+                });
+                return true;
+              } else if (target.pathname && target.pathname !== '/') {
+                console.log('[switcher] Restoring active path:', target.pathname);
+                await r.navigate({ to: target.pathname });
+                return true;
+              }
+              return true;
+            }
+          } catch (navErr) {
+            console.warn('[switcher] Navigate attempt error:', navErr);
           }
-        })()`, false, 2000);
-      } catch (e) {
-        logger.warn('sidecar', `Could not restore preserved route: ${e.message}`);
-      }
+          await new Promise(res => setTimeout(res, 200));
+        }
+        return false;
+      })()`, false, 6000);
+    } catch (e) {
+      logger.warn('sidecar', `Could not restore preserved route: ${e.message}`);
+    } finally {
+      savedRouteData = null;
     }
   }
 

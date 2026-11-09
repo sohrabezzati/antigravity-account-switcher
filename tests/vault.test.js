@@ -145,4 +145,27 @@ test('executeAccountSwitch invokes early callback before completing', async () =
   assert.equal(result.alreadyActive, true);
 });
 
+test('executeAccountSwitch captures active conversation route via mock CDP', async () => {
+  const { executeAccountSwitch } = await import('../src/sidecar/index.js');
+  const profiles = listProfiles();
+  const active = profiles.find(p => p.isActive);
+  assert.ok(active, 'Must have active profile');
+
+  let evaluatedExpr = null;
+  const mockCdp = {
+    isConnected: true,
+    evaluate: async (expr) => {
+      evaluatedExpr = expr;
+      return {
+        cascadeId: 'test-cascade-12345',
+        pathname: '/manager-layout/manager-landing-layout/c/test-cascade-12345'
+      };
+    }
+  };
+
+  const result = await executeAccountSwitch(active.id, mockCdp);
+  assert.ok(evaluatedExpr.includes('$cascadeId') || evaluatedExpr.includes('__TSR_ROUTER__'));
+  assert.equal(result.alreadyActive, true);
+});
+
 
