@@ -24,13 +24,13 @@ let isSwitchingInProgress = false;
 /**
  * Centralized, risk-free account switch pipeline:
  * 1. Mutex guard to prevent overlapping switches
- * 2. switchProfile(targetId) to write Windows Credential Manager & update vault
+ * 2. switchProfile(targetId) to write native credential storage & update vault
  * 3. Fast-path exit if target account is already active
- * 4. LanguageServerService/Restart RPC via CDP with awaitPromise=true & 2.5s AbortSignal timeout
- * 5. 300ms settling pause, then cdp.reloadWindow()
+ * 4. Early callback notification (onProfileSwitched) so HTTP clients get 200 OK before any restart/reload
+ * 5. Non-blocking LanguageServerService/Restart RPC and window reload via CDP
  * 6. Always releases mutex in finally block
  */
-export async function executeAccountSwitch(targetId, cdp) {
+export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
   if (isSwitchingInProgress) {
     logger.warn('sidecar', `[SWITCH_REJECTED] Switch to ${targetId} rejected because another switch is in progress.`);
     throw new Error('A switch is already in progress. Please wait a moment.');
@@ -40,58 +40,67 @@ export async function executeAccountSwitch(targetId, cdp) {
   isSwitchingInProgress = true;
 
   try {
-    // Step 1: Write target credentials to Windows Credential Manager & update vault
+    // Step 1: Write target credentials to system credential storage & update vault
     const switched = switchProfile(targetId);
 
     // Fast-path: Account is already active -> No restart or reload needed!
     if (switched.alreadyActive) {
       logger.info('sidecar', `[SWITCH_FASTPATH] Profile ${switched.email} is already active. Returning immediately.`);
-      return { ok: true, alreadyActive: true, profile: switched };
+      const result = { ok: true, alreadyActive: true, profile: switched };
+      if (typeof onProfileSwitched === 'function') {
+        try { onProfileSwitched(result); } catch {}
+      }
+      return result;
     }
 
-    // Step 2: Restart Language Server (dropping in-memory cache so it re-reads target credentials)
+    // Immediately notify caller that credentials have been written so HTTP connections
+    // are completed cleanly before any process restarts or window reloads occur.
+    if (typeof onProfileSwitched === 'function') {
+      try { onProfileSwitched({ ok: true, profile: switched }); } catch {}
+    }
+
+    // Step 2 & 3: Restart Language Server & Reload Window via non-blocking CDP dispatch
     if (cdp && cdp.isConnected) {
       try {
-        logger.info('sidecar', '[SWITCH_RPC] Calling LanguageServerService/Restart');
+        logger.info('sidecar', '[SWITCH_RPC] Dispatching LanguageServer restart & window reload sequence');
+        // Dispatch non-blocking script to renderer. Setting awaitPromise=false ensures CDP returns
+        // immediately, avoiding connection drops if LanguageServer terminates child processes.
         await cdp.evaluate(`(async () => {
           try {
             const port = window.location.port || '51339';
             const csrf = window.__APP_CONFIG__?.csrfToken || '';
-            if (!port) {
-              console.warn('[switcher] Missing port, proceeding to window reload');
-              return;
-            }
-
-            const headers = {
-              'Content-Type': 'application/json',
-              'x-codeium-csrf-token': csrf
-            };
-
-            try {
-              await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/Restart', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({}),
-                signal: AbortSignal.timeout(2500)
-              });
-            } catch (e) {
-              console.warn('[switcher] Restart warning:', e);
+            if (port) {
+              const headers = {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': csrf
+              };
+              try {
+                await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/Restart', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({}),
+                  signal: AbortSignal.timeout(2000)
+                });
+              } catch (e) {
+                console.warn('[switcher] Restart warning:', e);
+              }
             }
           } catch (e) {
             console.error('[switcher] Error in switch pipeline:', e);
           }
-        })()`, true, 3500);
+          setTimeout(() => {
+            try {
+              window.location.reload();
+            } catch (rErr) {
+              console.error('[switcher] Reload error:', rErr);
+            }
+          }, 350);
+        })()`, false, 2500);
       } catch (cdpErr) {
-        logger.warn('sidecar', `CDP evaluate error during Restart: ${cdpErr.message}`);
-      }
-
-      // Step 3: Wait 300ms, then trigger cdp.reloadWindow()
-      await new Promise(r => setTimeout(r, 300));
-      try {
-        logger.info('sidecar', '[SWITCH_RELOAD] Executing window reload');
-        await cdp.reloadWindow();
-      } catch (rErr) {
-        logger.error('sidecar', 'Window reload error', rErr);
+        logger.warn('sidecar', `CDP dispatch error during switch sequence: ${cdpErr.message}`);
+        try {
+          await cdp.reloadWindow();
+        } catch {}
       }
     } else {
       logger.warn('sidecar', '[SWITCH_NO_CDP] CDP bridge not connected, only credentials switched.');
@@ -205,9 +214,19 @@ async function main() {
         }
 
         try {
-          const result = await executeAccountSwitch(id, cdp);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(result));
+          let hasResponded = false;
+          const sendResponse = (payload, statusCode = 200) => {
+            if (!hasResponded) {
+              hasResponded = true;
+              res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(payload));
+            }
+          };
+
+          const result = await executeAccountSwitch(id, cdp, (earlyResult) => {
+            sendResponse(earlyResult, 200);
+          });
+          sendResponse(result, 200);
         } catch (switchErr) {
           const statusCode = switchErr.message.includes('already in progress') ? 409 : 500;
           logger.error('sidecar', '[SWITCH_ERROR]', switchErr);
@@ -363,7 +382,10 @@ async function main() {
   await cdp.connect();
 }
 
-main().catch(err => {
-  logger.error('sidecar', 'Fatal error', err);
-  process.exit(1);
-});
+// Only run main() when not under test harness
+if (!process.env.NODE_TEST_CONTEXT && !process.argv.some(a => a.includes('test'))) {
+  main().catch(err => {
+    logger.error('sidecar', 'Fatal error', err);
+    process.exit(1);
+  });
+}

@@ -315,6 +315,13 @@
     window.addEventListener('pointerdown', window.__AGY_OUTSIDE_HANDLER__, true);
     window.addEventListener('mousedown', window.__AGY_OUTSIDE_HANDLER__, true);
 
+    if (!window.__AGY_UNLOAD_BOUND__) {
+      window.__AGY_UNLOAD_BOUND__ = true;
+      window.addEventListener('beforeunload', () => {
+        window.__AGY_IS_UNLOADING__ = true;
+      });
+    }
+
     if (!window.__AGY_KEY_BOUND__) {
       window.__AGY_KEY_BOUND__ = true;
       window.addEventListener('keydown', (e) => {
@@ -847,19 +854,19 @@
       proceedBtn.innerText = 'Switching...';
       proceedBtn.disabled = true;
 
-      // 7-second safety watchdog: resets button and unlocks UI if reload is delayed or severed
+      // 8-second safety watchdog: resets button and unlocks UI if reload is delayed or severed
       if (switchWatchdogTimer) clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = setTimeout(() => {
         proceedBtn.innerText = 'Confirm Switch';
         proceedBtn.disabled = false;
-        alert('Switch response received, but window reload was delayed. Please check active account.');
-      }, 7000);
+        alert('Switch response received, but window reload was delayed. Please reload window manually.');
+      }, 8000);
 
       try {
         const res = await fetch(`${API_BASE}/api/switch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: accId })
+          body: JSON.stringify({ id: accId, source: 'renderer' })
         });
         const data = await res.json();
         if (data.alreadyActive) {
@@ -876,12 +883,50 @@
           }
           alert('Switch notice: ' + (data.error || 'Switch failed'));
           hideConfirm();
+        } else {
+          // Success: credentials updated cleanly
+          if (switchWatchdogTimer) {
+            clearTimeout(switchWatchdogTimer);
+            switchWatchdogTimer = null;
+          }
+          proceedBtn.innerText = '✓ Switched!';
+          proceedBtn.style.background = '#10b981';
+          const confirmBox = document.querySelector('.agy-confirm-box');
+          if (confirmBox) {
+            confirmBox.innerHTML = `
+              <div style="text-align:center;padding:16px 8px;">
+                <div style="font-size:24px;margin-bottom:8px;">🚀</div>
+                <h4 style="margin:0 0 8px;font-size:15px;font-weight:600;color:#f8fafc;">Switching Active Account</h4>
+                <p style="margin:0;font-size:12px;color:#94a3b8;">Active account set to <strong>${email}</strong>.<br>Reloading Antigravity window...</p>
+              </div>
+            `;
+          }
+          // Client-side reload fallback in case CDP reload event was delayed
+          setTimeout(() => {
+            try { window.location.reload(); } catch {}
+          }, 800);
         }
       } catch (e) {
+        if (window.__AGY_IS_UNLOADING__) return;
         if (switchWatchdogTimer) {
           clearTimeout(switchWatchdogTimer);
           switchWatchdogTimer = null;
         }
+
+        // Resilient recovery: verify if vault switched despite unexpected network hitch
+        try {
+          const checkRes = await fetch(`${API_BASE}/api/accounts`);
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            const active = checkData.accounts?.find(a => a.isActive);
+            if (active && (active.id === accId || (active.email && active.email.toLowerCase() === email.toLowerCase()))) {
+              // Successfully switched, reload immediately!
+              window.location.reload();
+              return;
+            }
+          }
+        } catch {}
+
         alert('Switch failed: ' + e.message);
         hideConfirm();
       }
@@ -948,12 +993,18 @@
   async function requestRelogin(accId, email) {
     if (confirm(`Session for ${email} needs re-authentication. Switch and open login now?`)) {
       try {
-        await fetch(`${API_BASE}/api/switch`, {
+        const res = await fetch(`${API_BASE}/api/switch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: accId })
+          body: JSON.stringify({ id: accId, source: 'renderer' })
         });
+        if (res.ok) {
+          setTimeout(() => {
+            try { window.location.reload(); } catch {}
+          }, 400);
+        }
       } catch (e) {
+        if (window.__AGY_IS_UNLOADING__) return;
         alert('Switch failed: ' + e.message);
       }
     }

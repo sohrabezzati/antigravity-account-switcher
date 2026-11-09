@@ -125,3 +125,24 @@ test('Platform paths resolver returns valid paths across platforms', async () =>
   assert.ok(getAgyCliDir().length > 0);
 });
 
+test('executeAccountSwitch invokes early callback before completing', async () => {
+  const { executeAccountSwitch } = await import('../src/sidecar/index.js');
+  const profiles = listProfiles();
+  const active = profiles.find(p => p.isActive);
+  assert.ok(active, 'Must have active profile');
+
+  let callbackCalled = false;
+  let callbackResult = null;
+  const mockCdp = { isConnected: false };
+
+  const result = await executeAccountSwitch(active.id, mockCdp, (res) => {
+    callbackCalled = true;
+    callbackResult = res;
+  });
+
+  assert.equal(callbackCalled, true, 'onProfileSwitched callback must be called');
+  assert.equal(callbackResult.alreadyActive, true);
+  assert.equal(result.alreadyActive, true);
+});
+
+
