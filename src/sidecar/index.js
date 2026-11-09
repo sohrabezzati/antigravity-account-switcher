@@ -20,15 +20,18 @@ const PORT = 51444;
 const HOST = '127.0.0.1';
 
 let isSwitchingInProgress = false;
+let savedRouteToRestore = null;
 
 /**
  * Centralized, risk-free account switch pipeline:
  * 1. Mutex guard to prevent overlapping switches
- * 2. switchProfile(targetId) to write native credential storage & update vault
- * 3. Fast-path exit if target account is already active
- * 4. Early callback notification (onProfileSwitched) so HTTP clients get 200 OK before any restart/reload
- * 5. Non-disruptive session sync, TOS auto-acceptance, and in-place DOM refresh via CDP
- * 6. Always releases mutex in finally block
+ * 2. Preserves active conversation / project route so user never loses their chat view
+ * 3. switchProfile(targetId) writes native credential storage & updates app_storage / vault
+ * 4. Fast-path exit if target account is already active
+ * 5. Early callback notification (onProfileSwitched) so HTTP clients get 200 OK
+ * 6. Non-blocking LanguageServerService/Restart RPC to force daemon to load new credentials into memory
+ * 7. Automatically restores saved route on new instance without blanking to /
+ * 8. Always releases mutex in finally block
  */
 export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
   if (isSwitchingInProgress) {
@@ -40,6 +43,19 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
   isSwitchingInProgress = true;
 
   try {
+    // Step 0: Capture active project & conversation route before any restarts
+    if (cdp && cdp.isConnected) {
+      try {
+        const currentRoute = await cdp.evaluate('window.location.pathname + window.location.search + window.location.hash', true, 2000);
+        if (currentRoute && currentRoute !== '/') {
+          savedRouteToRestore = currentRoute;
+          logger.info('sidecar', `[SWITCH_ROUTE] Preserving active conversation route: ${savedRouteToRestore}`);
+        }
+      } catch (err) {
+        logger.warn('sidecar', `Could not capture active route: ${err.message}`);
+      }
+    }
+
     // Step 1: Write target credentials to system credential storage & update vault
     const switched = switchProfile(targetId);
 
@@ -59,12 +75,10 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
       try { onProfileSwitched({ ok: true, profile: switched }); } catch {}
     }
 
-    // Step 2: Live In-Place Sync & TOS Acceptance via non-blocking CDP dispatch
+    // Step 2: Restart Language Server to reload credentials into binary memory
     if (cdp && cdp.isConnected) {
       try {
-        logger.info('sidecar', '[SWITCH_SYNC] Dispatching non-disruptive session sync & TOS acceptance to renderer');
-        // Setting awaitPromise=false ensures CDP returns immediately without blocking.
-        // We do NOT call Restart or reloadWindow() so active cascade sessions and chat histories remain 100% intact!
+        logger.info('sidecar', '[SWITCH_RESTART] Dispatching LanguageServer restart RPC to load new credentials');
         await cdp.evaluate(`(async () => {
           try {
             const port = window.location.port;
@@ -74,7 +88,7 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
                 'Content-Type': 'application/json',
                 'x-codeium-csrf-token': csrf
               };
-              // Programmatically accept Terms of Service & skip onboarding to prevent any nagging modals
+              // Programmatically accept Terms of Service & skip onboarding
               try {
                 await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/AcceptTermsOfService', {
                   method: 'POST',
@@ -84,31 +98,34 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
                     version: '1.0'
                   })
                 });
-              } catch (e) {
-                console.warn('[switcher] AcceptTermsOfService warning:', e);
-              }
-              try {
                 await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/SkipOnboarding', {
                   method: 'POST',
                   headers,
                   body: JSON.stringify({})
                 });
+              } catch {}
+
+              // Restart language_server daemon so it re-reads macOS Keychain with new credentials
+              try {
+                await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/Restart', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({}),
+                  signal: AbortSignal.timeout(2000)
+                });
               } catch (e) {
-                console.warn('[switcher] SkipOnboarding warning:', e);
+                console.warn('[switcher] Restart RPC caught:', e);
               }
             }
           } catch (e) {
-            console.warn('[switcher] Error in background sync:', e);
+            console.error('[switcher] Error in switch restart pipeline:', e);
           }
-          // Refresh the switcher UI in-place without reloading the window
-          try {
-            if (window.__AGY_SWITCHER__ && typeof window.__AGY_SWITCHER__.refresh === 'function') {
-              window.__AGY_SWITCHER__.refresh(true);
-            }
-          } catch {}
+          // Note: We do NOT call window.location.reload() manually.
+          // Antigravity Electron shell automatically reconnects to the new port,
+          // and the sidecar seamlessly restores the saved conversation route.
         })()`, false, 2500);
       } catch (cdpErr) {
-        logger.warn('sidecar', `CDP dispatch warning during session sync: ${cdpErr.message}`);
+        logger.warn('sidecar', `CDP dispatch warning during restart: ${cdpErr.message}`);
       }
     } else {
       logger.warn('sidecar', '[SWITCH_NO_CDP] CDP bridge not connected, only credentials switched.');
@@ -353,11 +370,29 @@ async function main() {
     }
   }
 
+  async function restorePreservedRoute() {
+    if (savedRouteToRestore && savedRouteToRestore !== '/') {
+      const targetRoute = savedRouteToRestore;
+      savedRouteToRestore = null;
+      try {
+        logger.info('sidecar', `Restoring preserved conversation route: ${targetRoute}`);
+        await cdp.evaluate(`(() => {
+          if (window.location.pathname + window.location.search === '/') {
+            window.location.replace(window.location.origin + ${JSON.stringify(targetRoute)});
+          }
+        })()`, false, 2000);
+      } catch (e) {
+        logger.warn('sidecar', `Could not restore preserved route: ${e.message}`);
+      }
+    }
+  }
+
   cdp.on('connected', async () => {
     // Wait briefly for DOM to be ready
     setTimeout(async () => {
+      await restorePreservedRoute();
       await injectUI();
-    }, 1500);
+    }, 1200);
   });
 
   // Watch for page reloads to re-inject UI & sync active session
@@ -367,10 +402,11 @@ async function main() {
     if (data.method === 'Page.loadEventFired') {
       if (pageLoadDebounce) clearTimeout(pageLoadDebounce);
       pageLoadDebounce = setTimeout(async () => {
-        logger.info('sidecar', 'Page loadEventFired detected. Syncing session & injecting UI.');
+        logger.info('sidecar', 'Page loadEventFired detected. Restoring route, syncing session & injecting UI.');
+        await restorePreservedRoute();
         try { syncActiveSession(); } catch {}
         await injectUI();
-      }, 1200);
+      }, 1000);
     }
   });
 

@@ -866,32 +866,52 @@
 
   function showConfirm(accId, email) {
     const dialog = document.getElementById('agy-confirm-dialog');
-    const text = document.getElementById('agy-confirm-text');
-    const proceedBtn = document.getElementById('agy-confirm-proceed');
-    const cancelBtn = document.getElementById('agy-confirm-cancel');
+    if (!dialog) return;
 
-    if (!dialog || !text) return;
+    let box = dialog.querySelector('.agy-confirm-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'agy-confirm-box';
+      dialog.appendChild(box);
+    }
 
     if (switchWatchdogTimer) {
       clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = null;
     }
 
-    text.innerHTML = `Switch active Google account to <strong>${email}</strong>?<br><span style="font-size:11px;color:#64748b;display:block;margin-top:6px;">All active chats and projects remain safe.</span>`;
+    box.innerHTML = `
+      <h4 class="agy-confirm-title">Switch Account?</h4>
+      <p id="agy-confirm-text" class="agy-confirm-text">Switch active Google account to <strong>${email}</strong>?<br><span style="font-size:11px;color:#64748b;display:block;margin-top:6px;">All active chats and projects remain safe.</span></p>
+      <div class="agy-confirm-actions">
+        <button id="agy-confirm-cancel" class="agy-cancel-btn">Cancel</button>
+        <button id="agy-confirm-proceed" class="agy-confirm-btn">Confirm Switch</button>
+      </div>
+    `;
+
     dialog.style.display = 'flex';
+
+    const cancelBtn = document.getElementById('agy-confirm-cancel');
+    const proceedBtn = document.getElementById('agy-confirm-proceed');
 
     cancelBtn.onclick = hideConfirm;
     proceedBtn.onclick = async () => {
       proceedBtn.innerText = 'Switching...';
       proceedBtn.disabled = true;
 
-      // 6-second safety watchdog: resets button if request times out
+      // 8-second safety watchdog: resets button if request times out
       if (switchWatchdogTimer) clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = setTimeout(() => {
-        proceedBtn.innerText = 'Confirm Switch';
-        proceedBtn.disabled = false;
-        alert('Switch request timed out. Please try again.');
-      }, 6000);
+        if (box) {
+          box.innerHTML = `
+            <h4 class="agy-confirm-title">Switch Account?</h4>
+            <p id="agy-confirm-text" class="agy-confirm-text">Switch request timed out. Please try again.</p>
+            <div class="agy-confirm-actions">
+              <button id="agy-confirm-cancel" class="agy-cancel-btn" onclick="window.__AGY_SWITCHER__?.requestSwitch && (document.getElementById('agy-confirm-dialog').style.display='none')">Close</button>
+            </div>
+          `;
+        }
+      }, 8000);
 
       try {
         const res = await fetch(`${API_BASE}/api/switch`, {
@@ -921,15 +941,25 @@
             clearTimeout(switchWatchdogTimer);
             switchWatchdogTimer = null;
           }
-          proceedBtn.innerText = '✓ Switched!';
-          proceedBtn.style.background = '#10b981';
 
+          if (box) {
+            box.innerHTML = `
+              <div style="text-align:center;padding:16px 8px;">
+                <div style="font-size:24px;margin-bottom:8px;">🚀</div>
+                <h4 style="margin:0 0 8px;font-size:15px;font-weight:600;color:var(--agy-text-main, #0f172a);">Activating Account</h4>
+                <p style="margin:0;font-size:12px;color:var(--agy-text-muted, #64748b);">Loaded credentials for <strong>${email}</strong>.<br>Activating session...</p>
+              </div>
+            `;
+          }
+          showToast(`Activating ${email}...`, 'info');
+
+          // Daemon restarts and Electron reconnects to the new port; sidecar restores active route seamlessly.
           setTimeout(async () => {
             hideConfirm();
             showToast(`Switched active account to ${email}`, 'success');
             await fetchAndRenderAccounts(true);
             dismissTermsModal();
-          }, 350);
+          }, 1400);
         }
       } catch (e) {
         if (window.__AGY_IS_UNLOADING__) return;
@@ -966,12 +996,7 @@
       switchWatchdogTimer = null;
     }
     const dialog = document.getElementById('agy-confirm-dialog');
-    const proceedBtn = document.getElementById('agy-confirm-proceed');
     if (dialog) dialog.style.display = 'none';
-    if (proceedBtn) {
-      proceedBtn.innerText = 'Confirm Switch';
-      proceedBtn.disabled = false;
-    }
   }
 
   // Delete Account Dialog
@@ -1071,7 +1096,7 @@
       for (const el of candidates) {
         const txt = (el.textContent || '').trim().toLowerCase();
         if (txt === 'accept and continue' || txt === 'accept' || txt === 'i agree' || txt === 'get started' || txt === 'continue' || txt === 'skip') {
-          const dialog = el.closest('[role="dialog"], .monaco-dialog-box, .monaco-modal, .notification-toast, .window-dialog');
+          const dialog = el.closest('[role="dialog"], .monaco-dialog-box, .monaco-modal, .notification-toast, .window-dialog, [class*="dialog"], [class*="modal"]');
           if (dialog) {
             const dText = (dialog.textContent || '').toLowerCase();
             if (dText.includes('security notice') || dText.includes('terms') || dText.includes('data use') || dText.includes('onboarding') || dText.includes('privacy')) {
@@ -1207,7 +1232,8 @@
     requestRelogin: requestRelogin,
     refresh: fetchAndRenderAccounts,
     copyEmail: copyEmail,
-    showToast: showToast
+    showToast: showToast,
+    dismissTermsModal: dismissTermsModal
   };
 
 })();
