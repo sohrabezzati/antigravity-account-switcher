@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { listProfiles, switchProfile, snapshotCurrentSession } from '../src/sidecar/vault-manager.js';
 import { getAllAccountsQuotaSummary } from '../src/sidecar/quota-poller.js';
 import { checkForUpdates, compareSemver, getCurrentVersion } from '../src/sidecar/update-checker.js';
 import { install, triggerLiveReload, getInstalledVersion } from '../scripts/install-plugin.js';
+import { readActiveCredential } from '../src/sidecar/cred-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,8 +16,15 @@ const __dirname = path.dirname(__filename);
 const args = process.argv.slice(2);
 const command = args[0];
 
+function makeAsciiBar(pct, width = 18) {
+  const safePct = Math.max(0, Math.min(100, Math.round(pct)));
+  const filled = Math.round((safePct / 100) * width);
+  const empty = width - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
 /**
- * Zero-config smart runner (inspired by Antigravity UI standard):
+ * Zero-config smart runner:
  * - If not installed -> installs automatically and hot-reloads Antigravity.
  * - If installed & outdated -> updates automatically and hot-reloads Antigravity.
  * - If installed & up-to-date -> refreshes the live UI and confirms status.
@@ -55,7 +65,6 @@ async function dispatchSmart() {
 }
 
 async function run() {
-  // If no subcommand is passed, or if user explicitly runs 'run', 'install', or 'update'
   if (!command || command === 'run' || command === 'install' || command === 'update') {
     await dispatchSmart();
     return;
@@ -92,6 +101,7 @@ async function run() {
         if (res.ok) sidecarOnline = true;
       } catch {}
 
+      console.log(`Platform:       ${process.platform} (${process.arch})`);
       console.log(`Sidecar Server: ${sidecarOnline ? '🟢 ONLINE (Port 51444)' : '⚪ OFFLINE'}`);
 
       const profiles = listProfiles();
@@ -137,18 +147,95 @@ async function run() {
 
     case 'list': {
       const accounts = await getAllAccountsQuotaSummary();
-      console.log('\n=================== Antigravity Accounts ===================');
-      console.table(accounts.map(a => ({
-        ID: a.id,
-        Label: a.label,
-        Email: a.email,
-        Plan: a.plan,
-        '5-Hour %': (a.fiveHourPercent !== undefined ? a.fiveHourPercent : a.remainingPercent) + '%',
-        'Weekly %': (a.weeklyPercent !== undefined ? a.weeklyPercent : 100) + '%',
-        Status: a.isActive ? 'ACTIVE' : a.status.toUpperCase(),
-        Reset: a.fiveHourCountdownText || a.resetCountdownText
-      })));
-      console.log('============================================================\n');
+      console.log('\n======================== Antigravity Accounts ========================');
+      console.table(accounts.map(a => {
+        const g = a.modelQuotas?.gemini || {};
+        const c = a.modelQuotas?.claudeGpt || {};
+        const ar = a.modelQuotas?.argon || {};
+        return {
+          ID: a.id,
+          Label: a.label,
+          Email: a.email,
+          Plan: a.plan,
+          'Gemini (5h/Wk)': `${g.fiveHourPercent ?? a.fiveHourPercent ?? 100}% / ${g.weeklyPercent ?? a.weeklyPercent ?? 100}%`,
+          'Claude & GPT': `${c.weeklyPercent ?? 100}%`,
+          'Argon': `${ar.weeklyPercent ?? 100}%`,
+          Status: a.isActive ? 'ACTIVE' : a.status.toUpperCase(),
+          Reset: a.fiveHourCountdownText || a.resetCountdownText
+        };
+      }));
+      console.log('======================================================================\n');
+      process.exit(0);
+      break;
+    }
+
+    case 'quota':
+    case 'quotas': {
+      const accounts = await getAllAccountsQuotaSummary();
+      const active = accounts.find(a => a.isActive) || accounts[0];
+
+      if (!active) {
+        console.log('No registered accounts in vault. Use "npx antigravity-account-switcher snapshot" to add current session.');
+        process.exit(0);
+      }
+
+      const g = active.modelQuotas?.gemini || { fiveHourPercent: active.fiveHourPercent ?? 100, weeklyPercent: active.weeklyPercent ?? 100 };
+      const c = active.modelQuotas?.claudeGpt || { fiveHourPercent: 100, weeklyPercent: 100 };
+      const ar = active.modelQuotas?.argon || { weeklyPercent: 100 };
+
+      console.log('\n====================== Active Account Live Quotas ======================');
+      console.log(`Account: ${active.label} (${active.email}) [Plan: ${active.plan || 'Free'}]`);
+      console.log('────────────────────────────────────────────────────────────────────────');
+
+      console.log('\n🔷 GEMINI MODELS (Gemini 2.5 Flash, Gemini 2.5 Pro)');
+      console.log(`  • 5-Hour Session: [${makeAsciiBar(g.fiveHourPercent)}] ${String(g.fiveHourPercent).padStart(3)}%  (${g.fiveHourCountdownText || active.fiveHourCountdownText || 'Ready'})`);
+      console.log(`  • Weekly Pool:    [${makeAsciiBar(g.weeklyPercent)}] ${String(g.weeklyPercent).padStart(3)}%  (${g.weeklyCountdownText || active.weeklyCountdownText || 'Active'})`);
+
+      console.log('\n🟣 CLAUDE & GPT MODELS (Claude 3.7 Sonnet, Claude 3.5 Opus, GPT-OSS)');
+      console.log(`  • 5-Hour Session: [${makeAsciiBar(c.fiveHourPercent)}] ${String(c.fiveHourPercent).padStart(3)}%  (${c.fiveHourCountdownText || 'Ready'})`);
+      console.log(`  • Weekly Pool:    [${makeAsciiBar(c.weeklyPercent)}] ${String(c.weeklyPercent).padStart(3)}%  (${c.weeklyCountdownText || 'Active'})`);
+
+      console.log('\n⚡ GEMINI 4 ARGON (Dedicated Deep Reasoning WTU)');
+      console.log(`  • Weekly Limit:   [${makeAsciiBar(ar.weeklyPercent)}] ${String(ar.weeklyPercent).padStart(3)}%  (${ar.weeklyCountdownText || 'Active'})`);
+      if (ar.fiveHourPercent !== undefined && ar.fiveHourPercent < 100) {
+        console.log(`  • 5-Hour Limit:   [${makeAsciiBar(ar.fiveHourPercent)}] ${String(ar.fiveHourPercent).padStart(3)}%  (${ar.fiveHourCountdownText || 'Ready'})`);
+      }
+
+      console.log('\n========================================================================\n');
+      process.exit(0);
+      break;
+    }
+
+    case 'cli':
+    case 'agy': {
+      console.log('\n=================== Antigravity CLI (agy) Integration ===================');
+      const { execSync } = await import('child_process');
+      let agyPath = null;
+      try {
+        const which = execSync('which agy 2>/dev/null || true', { encoding: 'utf8' }).trim();
+        if (which) agyPath = which;
+      } catch {}
+
+      if (!agyPath) {
+        const def = path.join(os.homedir(), '.gemini', 'bin', 'agy');
+        if (fs.existsSync(def)) agyPath = def;
+      }
+
+      const activeCred = readActiveCredential();
+      console.log(`CLI Binary:     ${agyPath || 'Not found in PATH'}`);
+      console.log(`Active Account: ${activeCred?.id_token_email || 'Not logged in'}`);
+      console.log(`Keyring Target: gemini:antigravity (OS: ${process.platform})`);
+
+      let isRunning = false;
+      try {
+        const ps = execSync('pgrep -fl "agy" 2>/dev/null || true', { encoding: 'utf8' }).trim();
+        isRunning = ps.includes('agy');
+      } catch {}
+
+      console.log(`Running Daemon: ${isRunning ? '🟢 Active background agy process detected' : '⚪ Idle'}`);
+      console.log('\n💡 Tip: When you run "switch <id>", the credential vault automatically');
+      console.log('updates the native keyring, allowing agy to immediately use the switched account.');
+      console.log('=========================================================================\n');
       process.exit(0);
       break;
     }
@@ -191,7 +278,6 @@ async function run() {
           process.exit(1);
         }
       } catch (err) {
-        // If the request succeeded in reaching sidecar but failed on JSON or abort
         if (sidecarHandled) {
           console.error(`Error: Switch failed on sidecar: ${err.message}`);
           process.exit(1);
@@ -203,7 +289,7 @@ async function run() {
       if (res.alreadyActive) {
         console.log(`Account ${match.label} (${match.email}) is already active.`);
       } else {
-        console.log(`Switched active account to ${match.label} (${match.email}) in vault (Sidecar offline; restart Antigravity to apply).`);
+        console.log(`Switched active account to ${match.label} (${match.email}) in vault (Sidecar offline; restart Antigravity/agy to apply).`);
       }
       return;
     }
@@ -221,16 +307,19 @@ async function run() {
     case 'help':
     default:
       console.log(`
-Antigravity Account Switcher CLI
+Antigravity Account Switcher CLI (Cross-Platform: Windows, macOS, Linux/Fedora)
 
 Zero-Config Usage:
   npx antigravity-account-switcher          Smart action (installs, updates, or refreshes)
 
 Subcommands:
-  npx antigravity-account-switcher status        Check daemon status & quota updates
-  npx antigravity-account-switcher check-update  Check if newer version exists
-  npx antigravity-account-switcher list          Display registered accounts and quotas
+  npx antigravity-account-switcher status        Check daemon status & platform integration
+  npx antigravity-account-switcher list          Display registered accounts with separate model quotas
+  npx antigravity-account-switcher quota         Show rich breakdown for Gemini, Claude/GPT & Argon
   npx antigravity-account-switcher switch <id>   Switch active Google account
+  npx antigravity-account-switcher snapshot      Save current Google session to vault
+  npx antigravity-account-switcher agy           Inspect antigravity-cli integration status
+  npx antigravity-account-switcher check-update  Check if newer release exists
   npx antigravity-account-switcher start         Start background sidecar server
   npx antigravity-account-switcher uninstall     Uninstall plugin from Antigravity
 `);

@@ -2056,6 +2056,180 @@ body.dark .agy-ver-tag.new {
   background: var(--agy-toolbar-btn-hover);
 }
 
+/* ========================================================
+   Multi-Model Quotas Architecture (Gemini, Claude/GPT, Argon)
+   ======================================================== */
+.agy-model-tabs-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--agy-toolbar-bg);
+  border: 1px solid var(--agy-toolbar-border);
+  border-radius: 9px;
+  padding: 3px;
+  margin: 10px 0 12px 0;
+  user-select: none;
+}
+
+.agy-model-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--agy-text-muted);
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.agy-model-tab-btn:hover {
+  color: var(--agy-text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.agy-model-tab-btn.active {
+  background: var(--agy-card-bg);
+  color: var(--agy-text-main);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.agy-model-card {
+  background: var(--agy-card-bg);
+  border: 1px solid var(--agy-card-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.agy-model-card:last-child {
+  margin-bottom: 0;
+}
+
+.agy-model-card.gemini {
+  border-left: 3px solid #38bdf8;
+}
+
+.agy-model-card.claude {
+  border-left: 3px solid #f97316;
+}
+
+.agy-model-card.argon {
+  border-left: 3px solid #10b981;
+}
+
+.agy-model-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.agy-model-title-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agy-model-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.agy-model-badge.gemini {
+  background: rgba(56, 189, 248, 0.15);
+  color: #0284c7;
+}
+
+body.theme-dark .agy-model-badge.gemini,
+body.dark .agy-model-badge.gemini,
+body.vscode-dark .agy-model-badge.gemini {
+  color: #38bdf8;
+}
+
+.agy-model-badge.claude {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ea580c;
+}
+
+body.theme-dark .agy-model-badge.claude,
+body.dark .agy-model-badge.claude,
+body.vscode-dark .agy-model-badge.claude {
+  color: #fb923c;
+}
+
+.agy-model-badge.argon {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+body.theme-dark .agy-model-badge.argon,
+body.dark .agy-model-badge.argon,
+body.vscode-dark .agy-model-badge.argon {
+  color: #34d399;
+}
+
+.agy-model-subtitle {
+  font-size: 11px;
+  color: var(--agy-text-muted);
+}
+
+/* Standby Model Chips */
+.agy-standby-models-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.agy-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--agy-toolbar-bg);
+  border: 1px solid var(--agy-card-border);
+  font-size: 10px;
+  color: var(--agy-text-muted);
+}
+
+.agy-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.agy-chip-dot.gemini { background: #38bdf8; }
+.agy-chip-dot.claude { background: #f97316; }
+.agy-chip-dot.argon { background: #10b981; }
+
+.agy-chip-name {
+  font-weight: 600;
+  color: var(--agy-text-main);
+}
+
+.agy-chip-val {
+  font-weight: 500;
+}
+
+.agy-chip-val.healthy { color: #10b981; }
+.agy-chip-val.warning { color: #f59e0b; }
+.agy-chip-val.critical { color: #ef4444; }
+
 /* Dropdown Entrance Animation */
 @keyframes agy-pop-in {
   0% { opacity: 0; transform: translateY(-4px) scale(0.96); }

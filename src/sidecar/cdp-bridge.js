@@ -3,12 +3,7 @@ import path from 'path';
 import os from 'os';
 import { EventEmitter } from 'events';
 import { logger } from './logger.js';
-
-const DEVTOOLS_PORT_PATH = path.join(
-  process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
-  'Antigravity',
-  'DevToolsActivePort'
-);
+import { getDevToolsPortPath } from './platform-paths.js';
 
 export class CdpBridge extends EventEmitter {
   constructor() {
@@ -27,9 +22,10 @@ export class CdpBridge extends EventEmitter {
    * Reads DevToolsActivePort file to get the active DevTools port.
    */
   getDevToolsPort() {
-    if (!fs.existsSync(DEVTOOLS_PORT_PATH)) return null;
+    const portPath = getDevToolsPortPath();
+    if (!fs.existsSync(portPath)) return null;
     try {
-      const content = fs.readFileSync(DEVTOOLS_PORT_PATH, 'utf8').trim().split('\n');
+      const content = fs.readFileSync(portPath, 'utf8').trim().split('\n');
       const port = parseInt(content[0], 10);
       return isNaN(port) ? null : port;
     } catch (e) {

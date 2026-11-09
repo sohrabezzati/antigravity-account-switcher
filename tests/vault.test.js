@@ -100,3 +100,28 @@ test('getAllAccountsQuotaSummary accurately classifies accounts with exhausted w
   });
 });
 
+test('Multi-model quota structure correctly provides separate Gemini, Claude/GPT, and Argon buckets', async () => {
+  const { getAllAccountsQuotaSummary } = await import('../src/sidecar/quota-poller.js');
+  const summary = await getAllAccountsQuotaSummary();
+  assert.ok(summary.length >= 1, 'Should return active account summary');
+
+  const acc = summary[0];
+  assert.ok(acc.modelQuotas, 'Account must have modelQuotas object');
+  assert.ok(acc.modelQuotas.gemini, 'modelQuotas must contain gemini');
+  assert.ok(acc.modelQuotas.claudeGpt, 'modelQuotas must contain claudeGpt');
+  assert.ok(acc.modelQuotas.argon, 'modelQuotas must contain argon');
+
+  assert.equal(typeof acc.modelQuotas.gemini.fiveHourPercent, 'number');
+  assert.equal(typeof acc.modelQuotas.gemini.weeklyPercent, 'number');
+  assert.equal(typeof acc.modelQuotas.claudeGpt.weeklyPercent, 'number');
+  assert.equal(typeof acc.modelQuotas.argon.weeklyPercent, 'number');
+});
+
+test('Platform paths resolver returns valid paths across platforms', async () => {
+  const { getDevToolsPortPath, getAppStoragePath, getVaultDir, getAgyCliDir } = await import('../src/sidecar/platform-paths.js');
+  assert.ok(getDevToolsPortPath().length > 0);
+  assert.ok(getAppStoragePath().length > 0);
+  assert.ok(getVaultDir().length > 0);
+  assert.ok(getAgyCliDir().length > 0);
+});
+

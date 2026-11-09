@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import { fileURLToPath } from 'url';
+import { getDevToolsPortPath, getPluginDir } from '../src/sidecar/platform-paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +11,7 @@ export const ROOT_DIR = path.resolve(__dirname, '..');
 
 export const PLUGIN_NAME = 'antigravity-account-switcher';
 export const PLUGINS_DIR = path.join(os.homedir(), '.gemini', 'config', 'plugins');
-export const TARGET_DIR = path.join(PLUGINS_DIR, PLUGIN_NAME);
+export const TARGET_DIR = getPluginDir();
 
 /**
  * Returns installed version of the plugin if present.
@@ -54,11 +55,11 @@ export function copyDirRecursive(src, dest) {
 }
 
 /**
- * Injects latest CSS and JS directly into live Antigravity desktop window via CDP.
+ * Injects latest CSS and JS directly into live Antigravity desktop window via CDP across Windows, macOS, and Linux.
  */
 export async function triggerLiveReload() {
   try {
-    const portFile = path.join(process.env.APPDATA || '', 'Antigravity', 'DevToolsActivePort');
+    const portFile = getDevToolsPortPath();
     if (!fs.existsSync(portFile)) return false;
 
     const [portStr] = fs.readFileSync(portFile, 'utf8').trim().split('\n');
@@ -75,7 +76,7 @@ export async function triggerLiveReload() {
       }).on('error', () => resolve([]));
     });
 
-    const page = targets.find(t => t.type === 'page' || (t.url && t.url.includes('workbench.html')));
+    const page = targets.find(t => t.type === 'page' && (t.url?.includes('127.0.0.1') || t.title?.includes('Antigravity') || (t.url && t.url.includes('workbench.html'))));
     if (!page || !page.webSocketDebuggerUrl) return false;
 
     const cssPath = path.join(TARGET_DIR, 'src', 'injector', 'modal.css');

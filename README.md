@@ -9,7 +9,7 @@
   <p>
     <a href="https://github.com/omid-io/antigravity-account-switcher"><img src="https://img.shields.io/github/last-commit/omid-io/antigravity-account-switcher?style=flat-square&label=last%20commit" alt="Last commit" /></a>
     <a href="https://github.com/omid-io/antigravity-account-switcher/blob/master/LICENSE"><img src="https://img.shields.io/github/license/omid-io/antigravity-account-switcher?style=flat-square" alt="MIT License" /></a>
-    <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows11&logoColor=white" alt="Windows" />
+    <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20(Fedora%2FUbuntu)-0078D6?style=flat-square" alt="Cross-Platform" />
     <img src="https://img.shields.io/badge/Node.js-22.4%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.4 or newer recommended" />
   </p>
   <p>
@@ -25,28 +25,29 @@
 
 ## What it does
 
-**Antigravity Account Switcher** is a Windows-focused account manager for Google Antigravity Desktop. It adds an in-app account panel, keeps local snapshots of the Google sessions you choose to save, and lets you switch the active account without juggling separate launcher windows.
+**Antigravity Account Switcher** is a cross-platform account manager and live quota watcher for **Google Antigravity Desktop**, **Antigravity IDE**, and **antigravity-cli (`agy`)**. It adds an in-app account panel into the sidebar, keeps local encrypted snapshots of Google sessions, and allows you to seamlessly switch the active account across **macOS**, **Linux (Fedora, Ubuntu, Debian, Arch)**, and **Windows**.
 
 <div align="center">
   <img src="assets/preview.webp" alt="Antigravity Account Switcher - In-App Glassmorphic Modal & Quota Dashboard" width="85%" style="max-width: 720px;" />
-  <p><em>In-app glassmorphic modal with real-time quota telemetry, countdown timers, and 1-click account swap.</em></p>
+  <p><em>In-app glassmorphic modal with real-time multi-model telemetry (Gemini, Claude/GPT, and Argon), countdown timers, and 1-click account swap.</em></p>
 </div>
 
 A lightweight Node.js sidecar connects to the Antigravity renderer through the Chrome DevTools Protocol (CDP). It coordinates the local account vault, reads quota information exposed by Antigravity's local Language Server, and can optionally react to quota-exhaustion signals.
 
-> [!IMPORTANT]
-> The current implementation targets **Windows**. It reads and writes the Antigravity credential in **Windows Credential Manager** and uses Antigravity paths under `%APPDATA%`. macOS and Linux are not currently supported by this codebase.
+> [!NOTE]
+> **Cross-Platform Support**: Works out-of-the-box on **macOS** (macOS Keychain), **Linux Fedora / Ubuntu / RHEL** (Secret Service / `secret-tool`), and **Windows 10/11** (Windows Credential Manager). It also provides native skill integration for `antigravity-cli` (`agy`).
 
 ## Features
 
 | Feature | What you get |
 | --- | --- |
-| **In-app account panel** | An account launcher and dashboard injected into the Antigravity desktop renderer. |
+| **In-app account panel** | An account launcher and dashboard injected into the Antigravity desktop renderer sidebar next to Settings. |
+| **Separate Model Quotas** | Dedicated, categorized live quota gauges for **Gemini Models** (Flash/Pro), **Claude & GPT 3rd-Party Models** (Sonnet/Opus/GPT), and **Gemini 4 Argon** (Deep Reasoning WTU). |
 | **Local account vault** | Save session snapshots, keep multiple account profiles, and rename or remove saved profiles. |
-| **Confirmed account switching** | Select a saved account, confirm the change, update the local credential, and request a Language Server restart and renderer reload when CDP is available. |
-| **Quota overview** | View the available 5-hour and weekly quota buckets, plan information, and reset countdowns. |
+| **Confirmed account switching** | Select a saved account, confirm the change, update the native credential manager, and trigger zero-downtime Language Server restart and renderer reload. |
+| **antigravity-cli (`agy`) Support** | Native CLI subcommand `agy` and an integrated `agy` skill for multi-account management in terminal workflows. |
 | **Optional auto-switch** | When enabled, react to detected HTTP 429 / quota-exhaustion signals and select an eligible standby account. |
-| **CLI** | List accounts, switch by email or ID, snapshot the current session, inspect status, view logs, and check for updates. |
+| **CLI Dashboard** | List accounts with multi-model quotas, switch by email or ID, inspect rich terminal ASCII quota meters, and check for updates. |
 | **No model-traffic proxy** | The project does not implement a third-party proxy for model requests; quota reads use Antigravity's local Language Server interface. |
 
 ### A note about quota data
@@ -138,26 +139,34 @@ Run commands via `npx antigravity-account-switcher <command>` (or `node bin/cli.
 
 | Command | Description |
 | --- | --- |
-| `npx antigravity-account-switcher list` | List saved profiles and their available quota snapshots. |
-| `npx antigravity-account-switcher switch <email-or-id>` | Switch to a saved profile. |
+| `npx antigravity-account-switcher list` | List saved profiles with separate Gemini, Claude/GPT, and Argon quotas. |
+| `npx antigravity-account-switcher quota` | Show rich terminal ASCII quota dashboard across Gemini, Claude/GPT, and Argon. |
+| `npx antigravity-account-switcher switch <email-or-id>` | Switch active Google account in the native credential manager. |
+| `npx antigravity-account-switcher agy` | Inspect `antigravity-cli` (`agy`) integration status and background daemon. |
 | `npx antigravity-account-switcher snapshot "Work Account"` | Save or update a snapshot of the current session with a label. |
-| `npx antigravity-account-switcher status` | Show the sidecar connection, installed version, and vault account count. |
+| `npx antigravity-account-switcher status` | Show sidecar connection, platform OS, installed version, and vault count. |
 | `npx antigravity-account-switcher logs 100` | Print the most recent 100 log lines. |
 | `npx antigravity-account-switcher check-update` | Check the configured update sources for a newer version. |
 | `npx antigravity-account-switcher start` | Start the sidecar manually. |
 | `npx antigravity-account-switcher uninstall` | Remove the installed plugin. |
 | `npx antigravity-account-switcher --help` | Show CLI help. |
 
-If the sidecar is offline when `switch` is run, the CLI can update the saved Windows credential, but Antigravity may need a manual restart or reload before the change is reflected in the UI.
+If the sidecar is offline when `switch` is run, the CLI updates the native system credential manager (macOS Keychain, Linux Secret Service, or Windows Credential Manager), and Antigravity/agy will use the new account upon reload.
 
 ## How it is put together
 
 ```mermaid
 flowchart TD
-    A[Antigravity Desktop Renderer] <-->|Chrome DevTools Protocol| B[Node.js Sidecar]
-    B <-->|Local HTTP API :51444| C[Injected Account Panel]
+    A[Antigravity Desktop Renderer / agy CLI] <-->|Chrome DevTools Protocol / RPC| B[Node.js Sidecar]
+    B <-->|Local HTTP API :51444| C[Injected Multi-Model Account Panel]
     B --> D[Vault Manager]
-    D --> E[Windows Credential Manager]
+    D --> E[Native Credential Storage: Keychain / Secret Service / WinCred]
+    D --> F[Local JSON Profile Vault]
+    B --> G[Multi-Model Quota Poller]
+    G <-->|Language Server RPC: Gemini, Claude/GPT, Argon| A
+    B --> H[Auto-Switcher]
+    A -->|Console / Network quota signals| H
+```
     D --> F[Local JSON Profile Vault]
     B --> G[Quota Poller]
     G <-->|Local Language Server RPC| A

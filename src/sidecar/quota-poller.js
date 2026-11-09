@@ -38,7 +38,7 @@ export function calculateResetCountdown(resetTimeIso) {
 
 /**
  * Calls RetrieveUserQuotaSummary and GetUserStatus RPCs via CDP to retrieve 
- * the live active quota (5-hour limit and weekly limit) and Google profile metadata.
+ * the live active quota separated across Gemini, Claude/GPT 3rd-party, and Argon models.
  * @param {import('./cdp-bridge.js').CdpBridge} cdp 
  */
 export async function fetchActiveQuota(cdp) {
@@ -70,13 +70,39 @@ export async function fetchActiveQuota(cdp) {
           return { error: 'Failed to retrieve active session', needsRelogin: true };
         }
 
-        // 2. Fetch Official Quota Summary (Gemini Weekly & 5-Hour rolling buckets)
-        let fiveHourQuota = 1.0;
-        let fiveHourResetTime = null;
-        let fiveHourDesc = '';
-        let weeklyQuota = 1.0;
-        let weeklyResetTime = null;
-        let weeklyDesc = '';
+        // 2. Fetch Multi-Model Quota Summary (Gemini, Claude/GPT, and Argon)
+        const modelQuotas = {
+          gemini: {
+            displayName: 'Gemini Models',
+            description: 'Gemini Flash, Gemini Pro',
+            fiveHourFraction: 1.0,
+            fiveHourResetTime: null,
+            fiveHourDesc: '',
+            weeklyFraction: 1.0,
+            weeklyResetTime: null,
+            weeklyDesc: ''
+          },
+          claudeGpt: {
+            displayName: 'Claude & GPT Models',
+            description: 'Claude Opus, Claude Sonnet, GPT-OSS',
+            fiveHourFraction: 1.0,
+            fiveHourResetTime: null,
+            fiveHourDesc: '',
+            weeklyFraction: 1.0,
+            weeklyResetTime: null,
+            weeklyDesc: ''
+          },
+          argon: {
+            displayName: 'Gemini 4 Argon',
+            description: 'Argon WTU Deep Reasoning',
+            weeklyFraction: 1.0,
+            weeklyResetTime: null,
+            weeklyDesc: '',
+            fiveHourFraction: 1.0,
+            fiveHourResetTime: null,
+            fiveHourDesc: ''
+          }
+        };
 
         try {
           const quotaRes = await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary', {
@@ -84,24 +110,56 @@ export async function fetchActiveQuota(cdp) {
             headers,
             body: JSON.stringify({})
           });
+
           if (quotaRes.ok) {
             const quotaData = await quotaRes.json();
             const groups = quotaData.response?.groups || [];
-            // Primary group is Gemini Models (or first group)
-            const geminiGroup = groups.find(g => g.displayName && g.displayName.includes('Gemini')) || groups[0];
-            if (geminiGroup && geminiGroup.buckets) {
-              const weeklyBucket = geminiGroup.buckets.find(b => b.window === 'weekly' || b.bucketId === 'gemini-weekly');
-              const fiveHourBucket = geminiGroup.buckets.find(b => b.window === '5h' || b.bucketId === 'gemini-5h');
 
-              if (weeklyBucket) {
-                weeklyQuota = typeof weeklyBucket.remainingFraction === 'number' ? weeklyBucket.remainingFraction : 1.0;
-                weeklyResetTime = weeklyBucket.resetTime || null;
-                weeklyDesc = weeklyBucket.description || '';
-              }
-              if (fiveHourBucket) {
-                fiveHourQuota = typeof fiveHourBucket.remainingFraction === 'number' ? fiveHourBucket.remainingFraction : 1.0;
-                fiveHourResetTime = fiveHourBucket.resetTime || null;
-                fiveHourDesc = fiveHourBucket.description || '';
+            for (const g of groups) {
+              const dName = (g.displayName || '').toLowerCase();
+              const buckets = g.buckets || [];
+              const weeklyBucket = buckets.find(b => b.window === 'weekly' || (b.bucketId && b.bucketId.includes('weekly')));
+              const fiveHourBucket = buckets.find(b => b.window === '5h' || (b.bucketId && b.bucketId.includes('5h')));
+
+              if (dName.includes('argon')) {
+                if (g.displayName) modelQuotas.argon.displayName = g.displayName;
+                if (g.description) modelQuotas.argon.description = g.description;
+                if (weeklyBucket) {
+                  modelQuotas.argon.weeklyFraction = typeof weeklyBucket.remainingFraction === 'number' ? weeklyBucket.remainingFraction : 1.0;
+                  modelQuotas.argon.weeklyResetTime = weeklyBucket.resetTime || null;
+                  modelQuotas.argon.weeklyDesc = weeklyBucket.description || '';
+                }
+                if (fiveHourBucket) {
+                  modelQuotas.argon.fiveHourFraction = typeof fiveHourBucket.remainingFraction === 'number' ? fiveHourBucket.remainingFraction : 1.0;
+                  modelQuotas.argon.fiveHourResetTime = fiveHourBucket.resetTime || null;
+                  modelQuotas.argon.fiveHourDesc = fiveHourBucket.description || '';
+                }
+              } else if (dName.includes('claude') || dName.includes('gpt') || dName.includes('3p')) {
+                if (g.displayName) modelQuotas.claudeGpt.displayName = g.displayName;
+                if (g.description) modelQuotas.claudeGpt.description = g.description;
+                if (weeklyBucket) {
+                  modelQuotas.claudeGpt.weeklyFraction = typeof weeklyBucket.remainingFraction === 'number' ? weeklyBucket.remainingFraction : 1.0;
+                  modelQuotas.claudeGpt.weeklyResetTime = weeklyBucket.resetTime || null;
+                  modelQuotas.claudeGpt.weeklyDesc = weeklyBucket.description || '';
+                }
+                if (fiveHourBucket) {
+                  modelQuotas.claudeGpt.fiveHourFraction = typeof fiveHourBucket.remainingFraction === 'number' ? fiveHourBucket.remainingFraction : 1.0;
+                  modelQuotas.claudeGpt.fiveHourResetTime = fiveHourBucket.resetTime || null;
+                  modelQuotas.claudeGpt.fiveHourDesc = fiveHourBucket.description || '';
+                }
+              } else if (dName.includes('gemini')) {
+                if (g.displayName) modelQuotas.gemini.displayName = g.displayName;
+                if (g.description) modelQuotas.gemini.description = g.description;
+                if (weeklyBucket) {
+                  modelQuotas.gemini.weeklyFraction = typeof weeklyBucket.remainingFraction === 'number' ? weeklyBucket.remainingFraction : 1.0;
+                  modelQuotas.gemini.weeklyResetTime = weeklyBucket.resetTime || null;
+                  modelQuotas.gemini.weeklyDesc = weeklyBucket.description || '';
+                }
+                if (fiveHourBucket) {
+                  modelQuotas.gemini.fiveHourFraction = typeof fiveHourBucket.remainingFraction === 'number' ? fiveHourBucket.remainingFraction : 1.0;
+                  modelQuotas.gemini.fiveHourResetTime = fiveHourBucket.resetTime || null;
+                  modelQuotas.gemini.fiveHourDesc = fiveHourBucket.description || '';
+                }
               }
             }
           }
@@ -110,19 +168,19 @@ export async function fetchActiveQuota(cdp) {
         }
 
         // Fallback to clientModelConfigs if RetrieveUserQuotaSummary didn't provide buckets
-        if (fiveHourResetTime === null && weeklyResetTime === null) {
+        if (modelQuotas.gemini.fiveHourResetTime === null && modelQuotas.gemini.weeklyResetTime === null) {
           const configs = u.cascadeModelConfigData?.clientModelConfigs || [];
           const flashModel = configs.find(c => c.modelId && c.modelId.includes('flash') && c.quotaInfo && typeof c.quotaInfo.remainingFraction === 'number')
                           || configs.find(c => c.quotaInfo && typeof c.quotaInfo.remainingFraction === 'number');
           const weeklyModel = configs.find(c => c.modelId && (c.modelId.includes('claude') || c.modelId.includes('thinking') || c.modelId.includes('sonnet')) && c.quotaInfo && typeof c.quotaInfo.remainingFraction === 'number');
 
           if (flashModel && flashModel.quotaInfo) {
-            fiveHourQuota = flashModel.quotaInfo.remainingFraction;
-            fiveHourResetTime = flashModel.quotaInfo.resetTime || null;
+            modelQuotas.gemini.fiveHourFraction = flashModel.quotaInfo.remainingFraction;
+            modelQuotas.gemini.fiveHourResetTime = flashModel.quotaInfo.resetTime || null;
           }
           if (weeklyModel && weeklyModel.quotaInfo) {
-            weeklyQuota = weeklyModel.quotaInfo.remainingFraction;
-            weeklyResetTime = weeklyModel.quotaInfo.resetTime || null;
+            modelQuotas.gemini.weeklyFraction = weeklyModel.quotaInfo.remainingFraction;
+            modelQuotas.gemini.weeklyResetTime = weeklyModel.quotaInfo.resetTime || null;
           }
         }
 
@@ -141,12 +199,13 @@ export async function fetchActiveQuota(cdp) {
           name: u.name || '',
           plan,
           profilePictureUrl: u.profilePictureUrl || '',
-          fiveHourQuota,
-          fiveHourResetTime,
-          fiveHourDesc,
-          weeklyQuota,
-          weeklyResetTime,
-          weeklyDesc
+          fiveHourQuota: modelQuotas.gemini.fiveHourFraction,
+          fiveHourResetTime: modelQuotas.gemini.fiveHourResetTime,
+          fiveHourDesc: modelQuotas.gemini.fiveHourDesc,
+          weeklyQuota: modelQuotas.gemini.weeklyFraction,
+          weeklyResetTime: modelQuotas.gemini.weeklyResetTime,
+          weeklyDesc: modelQuotas.gemini.weeklyDesc,
+          modelQuotas
         };
       } catch (e) {
         return { error: e.message };
@@ -191,7 +250,8 @@ export async function fetchActiveQuota(cdp) {
         result.weeklyResetTime,
         result.fiveHourDesc,
         result.weeklyDesc,
-        false // session is active & valid
+        false, // session is active & valid
+        result.modelQuotas
       );
     }
 
@@ -203,7 +263,8 @@ export async function fetchActiveQuota(cdp) {
 }
 
 /**
- * Returns formatted quota summary for all vaulted profiles with dual limits (5-Hour & Weekly).
+ * Returns formatted quota summary for all vaulted profiles with separate limits
+ * for Gemini (5h + weekly), Claude & GPT (5h + weekly), and Argon (weekly/5h).
  * @param {import('./cdp-bridge.js').CdpBridge} [cdp] 
  */
 export async function getAllAccountsQuotaSummary(cdp) {
@@ -223,7 +284,7 @@ export async function getAllAccountsQuotaSummary(cdp) {
 
   const profiles = listProfiles();
   return profiles.map(p => {
-    // 5-Hour Limit
+    // 1. Gemini Models Quota
     let fiveHourFraction = typeof p.fiveHourQuota === 'number' ? p.fiveHourQuota : (typeof p.lastQuota === 'number' ? p.lastQuota : 1.0);
     const fiveHourReset = p.fiveHourResetTime || p.resetTime;
     const fiveHourCountdown = calculateResetCountdown(fiveHourReset);
@@ -232,7 +293,6 @@ export async function getAllAccountsQuotaSummary(cdp) {
     }
     const fiveHourPercent = Math.round(fiveHourFraction * 100);
 
-    // Weekly Limit
     let weeklyFraction = typeof p.weeklyQuota === 'number' ? p.weeklyQuota : 1.0;
     const weeklyCountdown = calculateResetCountdown(p.weeklyResetTime);
     if (weeklyCountdown.isExpired && p.weeklyResetTime && weeklyFraction < 1.0) {
@@ -240,6 +300,31 @@ export async function getAllAccountsQuotaSummary(cdp) {
     }
     const weeklyPercent = Math.round(weeklyFraction * 100);
 
+    // 2. Claude & GPT 3rd-Party Models Quota
+    const rawClaude = p.modelQuotas?.claudeGpt || {};
+    let claude5hFraction = typeof rawClaude.fiveHourFraction === 'number' ? rawClaude.fiveHourFraction : 1.0;
+    const claude5hCountdown = calculateResetCountdown(rawClaude.fiveHourResetTime);
+    if (claude5hCountdown.isExpired && rawClaude.fiveHourResetTime && claude5hFraction < 1.0) claude5hFraction = 1.0;
+    const claude5hPercent = Math.round(claude5hFraction * 100);
+
+    let claudeWeeklyFraction = typeof rawClaude.weeklyFraction === 'number' ? rawClaude.weeklyFraction : 1.0;
+    const claudeWeeklyCountdown = calculateResetCountdown(rawClaude.weeklyResetTime);
+    if (claudeWeeklyCountdown.isExpired && rawClaude.weeklyResetTime && claudeWeeklyFraction < 1.0) claudeWeeklyFraction = 1.0;
+    const claudeWeeklyPercent = Math.round(claudeWeeklyFraction * 100);
+
+    // 3. Gemini 4 Argon Models Quota
+    const rawArgon = p.modelQuotas?.argon || {};
+    let argonWeeklyFraction = typeof rawArgon.weeklyFraction === 'number' ? rawArgon.weeklyFraction : 1.0;
+    const argonWeeklyCountdown = calculateResetCountdown(rawArgon.weeklyResetTime);
+    if (argonWeeklyCountdown.isExpired && rawArgon.weeklyResetTime && argonWeeklyFraction < 1.0) argonWeeklyFraction = 1.0;
+    const argonWeeklyPercent = Math.round(argonWeeklyFraction * 100);
+
+    let argon5hFraction = typeof rawArgon.fiveHourFraction === 'number' ? rawArgon.fiveHourFraction : 1.0;
+    const argon5hCountdown = calculateResetCountdown(rawArgon.fiveHourResetTime);
+    if (argon5hCountdown.isExpired && rawArgon.fiveHourResetTime && argon5hFraction < 1.0) argon5hFraction = 1.0;
+    const argon5hPercent = Math.round(argon5hFraction * 100);
+
+    // Classification status
     let status = 'ready';
     if (p.needsRelogin) {
       status = 'needs_relogin';
@@ -262,17 +347,54 @@ export async function getAllAccountsQuotaSummary(cdp) {
       profilePictureUrl: p.profilePictureUrl || '',
       plan: p.plan || 'Free',
       isActive: !!p.isActive,
-      // 5-Hour Limit properties
+
+      // Default / Gemini Limit Properties (Backwards compatibility)
       fiveHourFraction,
       fiveHourPercent,
       fiveHourCountdownText: fiveHourCountdown.text,
       fiveHourDesc: p.fiveHourDesc || '',
-      // Weekly Limit properties
       weeklyFraction,
       weeklyPercent,
       weeklyCountdownText: weeklyCountdown.text,
       weeklyDesc: p.weeklyDesc || '',
-      // Legacy backward-compatibility mappings
+
+      // Separate structured model quotas (Gemini, Claude & GPT, Argon)
+      modelQuotas: {
+        gemini: {
+          displayName: rawClaude.displayName || 'Gemini Models',
+          models: 'Gemini Flash, Gemini Pro',
+          fiveHourFraction,
+          fiveHourPercent,
+          fiveHourCountdownText: fiveHourCountdown.text,
+          fiveHourDesc: p.fiveHourDesc || '',
+          weeklyFraction,
+          weeklyPercent,
+          weeklyCountdownText: weeklyCountdown.text,
+          weeklyDesc: p.weeklyDesc || ''
+        },
+        claudeGpt: {
+          displayName: rawClaude.displayName || 'Claude & GPT Models',
+          models: rawClaude.description || 'Claude Opus, Claude Sonnet, GPT-OSS',
+          fiveHourFraction: claude5hFraction,
+          fiveHourPercent: claude5hPercent,
+          fiveHourCountdownText: claude5hCountdown.text,
+          weeklyFraction: claudeWeeklyFraction,
+          weeklyPercent: claudeWeeklyPercent,
+          weeklyCountdownText: claudeWeeklyCountdown.text
+        },
+        argon: {
+          displayName: rawArgon.displayName || 'Gemini 4 Argon',
+          models: rawArgon.description || 'Argon WTU Deep Reasoning',
+          weeklyFraction: argonWeeklyFraction,
+          weeklyPercent: argonWeeklyPercent,
+          weeklyCountdownText: argonWeeklyCountdown.text,
+          fiveHourFraction: argon5hFraction,
+          fiveHourPercent: argon5hPercent,
+          fiveHourCountdownText: argon5hCountdown.text
+        }
+      },
+
+      // Legacy mappings
       remainingFraction: fiveHourFraction,
       remainingPercent: fiveHourPercent,
       resetCountdownText: fiveHourCountdown.text,

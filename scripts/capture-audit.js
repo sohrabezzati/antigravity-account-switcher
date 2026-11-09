@@ -1,9 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { getDevToolsPortPath } from '../src/sidecar/platform-paths.js';
 
 async function capture() {
-  const portFile = path.join(process.env.APPDATA || '', 'Antigravity', 'DevToolsActivePort');
+  const portFile = getDevToolsPortPath();
   if (!fs.existsSync(portFile)) throw new Error('DevToolsActivePort not found');
 
   const [portStr] = fs.readFileSync(portFile, 'utf8').trim().split('\n');

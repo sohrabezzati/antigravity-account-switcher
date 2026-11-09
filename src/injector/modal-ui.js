@@ -11,6 +11,7 @@
   let isAutoSwitchActive = false;
   let cachedAccounts = [];
   let isPopoverOpen = false;
+  let selectedModelTab = 'all';
 
   // 1. Inject Styles
   function injectStyles(cssText) {
@@ -535,45 +536,136 @@
           </div>
         </div>
 
-        <!-- Telemetry Gauges (Segmented LED Bars) -->
-        <div class="agy-cockpit-telemetry">
-          <!-- 5-Hour Session Meter -->
-          <div class="agy-telemetry-gauge-card" title="${activeAccount.fiveHourDesc || ''}">
-            <div class="agy-gauge-top">
-              <div class="agy-gauge-title">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                <span>5-Hour Quota</span>
-              </div>
-              <div class="agy-gauge-readout">
-                <span class="agy-gauge-pct ${heroFiveHourLevel}">${heroFiveHourPct}%</span>
-                <span class="agy-gauge-countdown">${activeAccount.fiveHourCountdownText || activeAccount.resetCountdownText || 'Ready'}</span>
-              </div>
-            </div>
-            ${renderContinuousBar(heroFiveHourPct, heroFiveHourLevel, true)}
-          </div>
+        <!-- Multi-Model Segmented Tab Selector -->
+        <div class="agy-model-tabs-container">
+          <button class="agy-model-tab-btn ${selectedModelTab === 'all' ? 'active' : ''}" onclick="window.__AGY_SWITCHER__.setModelTab('all')">≡ All Models</button>
+          <button class="agy-model-tab-btn ${selectedModelTab === 'gemini' ? 'active' : ''}" onclick="window.__AGY_SWITCHER__.setModelTab('gemini')">🔷 Gemini</button>
+          <button class="agy-model-tab-btn ${selectedModelTab === 'claudeGpt' ? 'active' : ''}" onclick="window.__AGY_SWITCHER__.setModelTab('claudeGpt')">🟣 Claude & GPT</button>
+          <button class="agy-model-tab-btn ${selectedModelTab === 'argon' ? 'active' : ''}" onclick="window.__AGY_SWITCHER__.setModelTab('argon')">⚡ Argon</button>
+        </div>
 
-          <!-- Weekly Horizon Meter -->
-          <div class="agy-telemetry-gauge-card" title="${activeAccount.weeklyDesc || ''}">
-            <div class="agy-gauge-top">
-              <div class="agy-gauge-title">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span>Weekly Pool</span>
+        <!-- Telemetry Gauges by Model Category -->
+        <div class="agy-models-telemetry-stack">
+          <!-- 1. Gemini Models Card -->
+          ${(selectedModelTab === 'all' || selectedModelTab === 'gemini') ? `
+            <div class="agy-model-card gemini">
+              <div class="agy-model-card-header">
+                <div class="agy-model-title-badge">
+                  <span class="agy-model-badge gemini">Gemini</span>
+                  <span class="agy-model-subtitle">Flash & Pro Models</span>
+                </div>
               </div>
-              <div class="agy-gauge-readout">
-                <span class="agy-gauge-pct ${heroWeeklyLevel}">${heroWeeklyPct}%</span>
-                <span class="agy-gauge-countdown">${activeAccount.weeklyCountdownText || 'Active'}</span>
+              <div class="agy-cockpit-telemetry">
+                <div class="agy-telemetry-gauge-card" title="${activeAccount.modelQuotas?.gemini?.fiveHourDesc || activeAccount.fiveHourDesc || ''}">
+                  <div class="agy-gauge-top">
+                    <div class="agy-gauge-title">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                      <span>5-Hour Quota</span>
+                    </div>
+                    <div class="agy-gauge-readout">
+                      <span class="agy-gauge-pct ${heroFiveHourLevel}">${heroFiveHourPct}%</span>
+                      <span class="agy-gauge-countdown">${activeAccount.modelQuotas?.gemini?.fiveHourCountdownText || activeAccount.fiveHourCountdownText || 'Ready'}</span>
+                    </div>
+                  </div>
+                  ${renderContinuousBar(heroFiveHourPct, heroFiveHourLevel, true)}
+                </div>
+
+                <div class="agy-telemetry-gauge-card" title="${activeAccount.modelQuotas?.gemini?.weeklyDesc || activeAccount.weeklyDesc || ''}">
+                  <div class="agy-gauge-top">
+                    <div class="agy-gauge-title">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                      <span>Weekly Pool</span>
+                    </div>
+                    <div class="agy-gauge-readout">
+                      <span class="agy-gauge-pct ${heroWeeklyLevel}">${heroWeeklyPct}%</span>
+                      <span class="agy-gauge-countdown">${activeAccount.modelQuotas?.gemini?.weeklyCountdownText || activeAccount.weeklyCountdownText || 'Active'}</span>
+                    </div>
+                  </div>
+                  ${renderContinuousBar(heroWeeklyPct, heroWeeklyLevel, true)}
+                </div>
               </div>
             </div>
-            ${renderContinuousBar(heroWeeklyPct, heroWeeklyLevel, true)}
-          </div>
+          ` : ''}
+
+          <!-- 2. Claude & GPT 3rd-Party Models Card -->
+          ${(selectedModelTab === 'all' || selectedModelTab === 'claudeGpt') ? (() => {
+            const cG = activeAccount.modelQuotas?.claudeGpt || {};
+            const c5Pct = typeof cG.fiveHourPercent === 'number' ? cG.fiveHourPercent : 100;
+            const c5Lvl = c5Pct > 50 ? 'healthy' : (c5Pct > 20 ? 'warning' : 'critical');
+            const cWkPct = typeof cG.weeklyPercent === 'number' ? cG.weeklyPercent : 100;
+            const cWkLvl = cWkPct > 50 ? 'healthy' : (cWkPct > 20 ? 'warning' : 'critical');
+            return `
+              <div class="agy-model-card claude">
+                <div class="agy-model-card-header">
+                  <div class="agy-model-title-badge">
+                    <span class="agy-model-badge claude">Claude & GPT</span>
+                    <span class="agy-model-subtitle">Claude 3.7 / 3.5 & GPT-OSS</span>
+                  </div>
+                </div>
+                <div class="agy-cockpit-telemetry">
+                  <div class="agy-telemetry-gauge-card" title="Claude & GPT 5-Hour rolling bucket">
+                    <div class="agy-gauge-top">
+                      <div class="agy-gauge-title">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <span>5-Hour Quota</span>
+                      </div>
+                      <div class="agy-gauge-readout">
+                        <span class="agy-gauge-pct ${c5Lvl}">${c5Pct}%</span>
+                        <span class="agy-gauge-countdown">${cG.fiveHourCountdownText || 'Ready'}</span>
+                      </div>
+                    </div>
+                    ${renderContinuousBar(c5Pct, c5Lvl, true)}
+                  </div>
+
+                  <div class="agy-telemetry-gauge-card" title="Claude & GPT Weekly bucket">
+                    <div class="agy-gauge-top">
+                      <div class="agy-gauge-title">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                        <span>Weekly Pool</span>
+                      </div>
+                      <div class="agy-gauge-readout">
+                        <span class="agy-gauge-pct ${cWkLvl}">${cWkPct}%</span>
+                        <span class="agy-gauge-countdown">${cG.weeklyCountdownText || 'Active'}</span>
+                      </div>
+                    </div>
+                    ${renderContinuousBar(cWkPct, cWkLvl, true)}
+                  </div>
+                </div>
+              </div>
+            `;
+          })() : ''}
+
+          <!-- 3. Gemini 4 Argon Models Card -->
+          ${(selectedModelTab === 'all' || selectedModelTab === 'argon') ? (() => {
+            const ar = activeAccount.modelQuotas?.argon || {};
+            const arWkPct = typeof ar.weeklyPercent === 'number' ? ar.weeklyPercent : 100;
+            const arWkLvl = arWkPct > 50 ? 'healthy' : (arWkPct > 20 ? 'warning' : 'critical');
+            return `
+              <div class="agy-model-card argon">
+                <div class="agy-model-card-header">
+                  <div class="agy-model-title-badge">
+                    <span class="agy-model-badge argon">Argon</span>
+                    <span class="agy-model-subtitle">Gemini 4 Argon (WTU Reasoning)</span>
+                  </div>
+                </div>
+                <div class="agy-cockpit-telemetry">
+                  <div class="agy-telemetry-gauge-card" style="grid-column: 1 / -1;" title="Argon Dedicated Reasoning Limit">
+                    <div class="agy-gauge-top">
+                      <div class="agy-gauge-title">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <span>Argon Weekly Limit</span>
+                      </div>
+                      <div class="agy-gauge-readout">
+                        <span class="agy-gauge-pct ${arWkLvl}">${arWkPct}%</span>
+                        <span class="agy-gauge-countdown">${ar.weeklyCountdownText || 'Active'}</span>
+                      </div>
+                    </div>
+                    ${renderContinuousBar(arWkPct, arWkLvl, true)}
+                  </div>
+                </div>
+              </div>
+            `;
+          })() : ''}
         </div>
       </div>
     `;
@@ -605,6 +697,13 @@
               const plan = (acc.plan || 'Free').toUpperCase();
               const planClass = getPlanClass(acc.plan);
               const needsRelogin = acc.status === 'needs_relogin';
+
+              // Standby Model Breakdown
+              const accGemini = acc.modelQuotas?.gemini || { fiveHourPercent: fivePct, weeklyPercent: wkPct };
+              const accClaude = acc.modelQuotas?.claudeGpt || { weeklyPercent: 100 };
+              const accArgon = acc.modelQuotas?.argon || { weeklyPercent: 100 };
+              const cLvl = (accClaude.weeklyPercent || 100) > 50 ? 'healthy' : ((accClaude.weeklyPercent || 100) > 20 ? 'warning' : 'critical');
+              const aLvl = (accArgon.weeklyPercent || 100) > 50 ? 'healthy' : ((accArgon.weeklyPercent || 100) > 20 ? 'warning' : 'critical');
 
               return `
                 <div class="agy-standby-card-d2">
@@ -654,6 +753,25 @@
                       <span class="agy-telemetry-name">WK</span>
                       ${renderContinuousBar(wkPct, wkLvl, false)}
                       <span class="agy-telemetry-readout ${wkLvl}">${wkPct}%</span>
+                    </div>
+                  </div>
+
+                  <!-- Row 3: Multi-Model Status Chips (Gemini, Claude, Argon) -->
+                  <div class="agy-standby-models-row">
+                    <div class="agy-model-chip" title="Gemini 5H: ${accGemini.fiveHourPercent}%, Weekly: ${accGemini.weeklyPercent}%">
+                      <span class="agy-chip-dot gemini"></span>
+                      <span class="agy-chip-name">Gemini</span>
+                      <span class="agy-chip-val ${fiveLvl}">${accGemini.fiveHourPercent}%</span>
+                    </div>
+                    <div class="agy-model-chip" title="Claude & GPT Weekly: ${accClaude.weeklyPercent}%">
+                      <span class="agy-chip-dot claude"></span>
+                      <span class="agy-chip-name">Claude</span>
+                      <span class="agy-chip-val ${cLvl}">${accClaude.weeklyPercent}%</span>
+                    </div>
+                    <div class="agy-model-chip" title="Gemini 4 Argon Weekly: ${accArgon.weeklyPercent}%">
+                      <span class="agy-chip-dot argon"></span>
+                      <span class="agy-chip-name">Argon</span>
+                      <span class="agy-chip-val ${aLvl}">${accArgon.weeklyPercent}%</span>
                     </div>
                   </div>
                 </div>
@@ -932,6 +1050,10 @@
     openPopover,
     closePopover,
     togglePopover,
+    setModelTab: function(tab) {
+      selectedModelTab = tab;
+      renderAccountCards(cachedAccounts);
+    },
     requestSwitch: showConfirm,
     requestDelete: showDeleteConfirm,
     requestRelogin: requestRelogin,

@@ -2,12 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { readActiveCredential, writeActiveCredential } from './cred-manager.js';
+import { getAppStoragePath, getVaultDir } from './platform-paths.js';
 import { logger } from './logger.js';
 
-const VAULT_DIR = path.join(os.homedir(), '.gemini', 'antigravity-switcher', 'vault');
+const VAULT_DIR = getVaultDir();
 const PROFILES_INDEX = path.join(VAULT_DIR, 'profiles.json');
 const SESSIONS_DIR = path.join(VAULT_DIR, 'sessions');
-const APP_STORAGE_PATH = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity', 'app_storage.json');
 
 /**
  * Initializes the Vault directory and registers the current active account if empty.
@@ -42,6 +42,15 @@ export function initVault() {
       isActive: true,
       lastQuota: 1.0,
       resetTime: null,
+      fiveHourQuota: 1.0,
+      weeklyQuota: 1.0,
+      fiveHourResetTime: null,
+      weeklyResetTime: null,
+      modelQuotas: {
+        gemini: { fiveHourPercent: 100, weeklyPercent: 100, fiveHourCountdownText: 'Refreshed', weeklyCountdownText: 'Refreshed' },
+        claudeGpt: { fiveHourPercent: 100, weeklyPercent: 100, fiveHourCountdownText: 'Refreshed', weeklyCountdownText: 'Refreshed' },
+        argon: { weeklyPercent: 100, weeklyCountdownText: 'Refreshed' }
+      },
       addedAt: new Date().toISOString()
     };
     
@@ -59,9 +68,10 @@ export function initVault() {
  * Reads user email from app_storage.json as fallback.
  */
 function getActiveEmailFromAppStorage() {
-  if (!fs.existsSync(APP_STORAGE_PATH)) return null;
+  const appStoragePath = getAppStoragePath();
+  if (!fs.existsSync(appStoragePath)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(APP_STORAGE_PATH, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
     return data['jetski.onboarding.lastLoginUsername'] || null;
   } catch {
     return null;
@@ -72,20 +82,21 @@ function getActiveEmailFromAppStorage() {
  * Updates user email in app_storage.json upon switch.
  */
 function updateAppStorageEmail(email) {
-  if (!fs.existsSync(APP_STORAGE_PATH) || !email) return false;
+  const appStoragePath = getAppStoragePath();
+  if (!fs.existsSync(appStoragePath) || !email) return false;
   try {
-    const data = JSON.parse(fs.readFileSync(APP_STORAGE_PATH, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
     data['jetski.onboarding.lastLoginUsername'] = email;
-    fs.writeFileSync(APP_STORAGE_PATH, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(appStoragePath, JSON.stringify(data, null, 2), 'utf8');
     return true;
   } catch (err) {
-    console.error('[vault-manager] Error updating app_storage.json:', err.message);
+    logger.warn('vault-manager', `Error updating app_storage.json: ${err.message}`);
     return false;
   }
 }
 
 /**
- * Automatically synchronizes the currently active Windows session with the vault:
+ * Automatically synchronizes the currently active system session with the vault:
  * 1. If active credential exists and is NOT in profiles.json, adds it as a new profile and saves its session.
  * 2. If it is already in profiles.json, ensures isActive=true and updates its session file with latest tokens.
  */
@@ -128,7 +139,7 @@ export function syncActiveSession() {
     }
   } else {
     // New account logged into Antigravity!
-    console.log(`[vault-manager] New active account detected: ${activeEmail}. Registering into vault.`);
+    logger.info('vault-manager', `New active account detected: ${activeEmail}. Registering into vault.`);
     const newId = 'acc_' + Date.now();
     const newProfile = {
       id: newId,
@@ -138,6 +149,15 @@ export function syncActiveSession() {
       isActive: true,
       lastQuota: 1.0,
       resetTime: null,
+      fiveHourQuota: 1.0,
+      weeklyQuota: 1.0,
+      fiveHourResetTime: null,
+      weeklyResetTime: null,
+      modelQuotas: {
+        gemini: { fiveHourPercent: 100, weeklyPercent: 100, fiveHourCountdownText: 'Refreshed', weeklyCountdownText: 'Refreshed' },
+        claudeGpt: { fiveHourPercent: 100, weeklyPercent: 100, fiveHourCountdownText: 'Refreshed', weeklyCountdownText: 'Refreshed' },
+        argon: { weeklyPercent: 100, weeklyCountdownText: 'Refreshed' }
+      },
       addedAt: new Date().toISOString()
     };
 
@@ -147,9 +167,9 @@ export function syncActiveSession() {
     try {
       fs.writeFileSync(path.join(SESSIONS_DIR, `${newId}.json`), JSON.stringify(cred, null, 2), 'utf8');
       fs.writeFileSync(PROFILES_INDEX, JSON.stringify(index, null, 2), 'utf8');
-      console.log(`[vault-manager] Successfully saved new account ${newId} (${activeEmail})`);
+      logger.info('vault-manager', `Successfully saved new account ${newId} (${activeEmail})`);
     } catch (err) {
-      console.error('[vault-manager] Error registering new account:', err.message);
+      logger.error('vault-manager', `Error registering new account: ${err.message}`);
     }
   }
 
@@ -182,7 +202,7 @@ export function snapshotCurrentSession(label) {
   initVault();
   const cred = readActiveCredential();
   if (!cred) {
-    throw new Error('No active Google session found in Windows Credential Manager.');
+    throw new Error('No active Google session found in system credential storage.');
   }
 
   const email = cred.id_token_email || getActiveEmailFromAppStorage() || 'account@google.com';
@@ -201,6 +221,10 @@ export function snapshotCurrentSession(label) {
       isActive: true,
       lastQuota: 1.0,
       resetTime: null,
+      fiveHourQuota: 1.0,
+      weeklyQuota: 1.0,
+      fiveHourResetTime: null,
+      weeklyResetTime: null,
       addedAt: new Date().toISOString()
     };
     // Mark others as inactive
@@ -219,9 +243,22 @@ export function snapshotCurrentSession(label) {
 }
 
 /**
- * Updates profile metadata (e.g. quota, resetTime, plan, session status).
+ * Updates profile metadata (e.g. quota, resetTime, plan, session status, separate model quotas).
  */
-export function updateProfileQuota(email, quotaFraction, resetTime, planName, profilePictureUrl, name, weeklyQuota, weeklyResetTime, fiveHourDesc, weeklyDesc, needsRelogin) {
+export function updateProfileQuota(
+  email,
+  quotaFraction,
+  resetTime,
+  planName,
+  profilePictureUrl,
+  name,
+  weeklyQuota,
+  weeklyResetTime,
+  fiveHourDesc,
+  weeklyDesc,
+  needsRelogin,
+  modelQuotas
+) {
   let index = listProfiles();
   let changed = false;
 
@@ -236,6 +273,8 @@ export function updateProfileQuota(email, quotaFraction, resetTime, planName, pr
       isActive: true,
       lastQuota: quotaFraction ?? 1.0,
       resetTime: resetTime || null,
+      fiveHourQuota: quotaFraction ?? 1.0,
+      weeklyQuota: weeklyQuota ?? 1.0,
       addedAt: new Date().toISOString()
     };
     index.forEach(p => { p.isActive = false; });
@@ -269,6 +308,7 @@ export function updateProfileQuota(email, quotaFraction, resetTime, planName, pr
       if (profilePictureUrl) p.profilePictureUrl = profilePictureUrl;
       if (name) p.name = name;
       if (needsRelogin !== undefined) p.needsRelogin = !!needsRelogin;
+      if (modelQuotas !== undefined) p.modelQuotas = modelQuotas;
       p.lastQuotaCheck = new Date().toISOString();
       changed = true;
     }
@@ -327,7 +367,7 @@ export function switchProfile(targetId) {
         fs.writeFileSync(path.join(SESSIONS_DIR, `${currentActive.id}.json`), JSON.stringify(currentCred, null, 2), 'utf8');
         logger.info('vault-manager', `Updated session backup for outgoing profile: ${currentActive.email}`);
       } else {
-        logger.warn('vault-manager', `Skipped session backup for outgoing profile ${currentActive.email} because active Windows credential belongs to "${activeCredEmail || 'unknown'}"`);
+        logger.warn('vault-manager', `Skipped session backup for outgoing profile ${currentActive.email} because active credential belongs to "${activeCredEmail || 'unknown'}"`);
       }
     }
   }
@@ -335,11 +375,11 @@ export function switchProfile(targetId) {
   // 2. Load target session
   const targetCred = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
 
-  // 3. Write target session to Windows Credential Manager
+  // 3. Write target session to system credential storage
   const written = writeActiveCredential(targetCred, 'antigravity');
   if (!written) {
-    logger.error('vault-manager', 'Failed to write target session to Windows Credential Manager');
-    throw new Error('Failed to write target session to Windows Credential Manager.');
+    logger.error('vault-manager', 'Failed to write target session to system credential storage');
+    throw new Error('Failed to write target session to system credential storage.');
   }
 
   // 4. Update app_storage.json with new email

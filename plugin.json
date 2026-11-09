@@ -1,6 +1,6 @@
 {
   "name": "antigravity-account-switcher",
   "displayName": "Antigravity Account Switcher",
-  "description": "Multi-Account & Live Quota Switcher for Antigravity 2.0 with sidebar integration and 1-click swap.",
+  "description": "Multi-Account & Live Quota Switcher for Google Antigravity (Desktop, IDE & agy CLI) with separate quotas for Gemini, Claude/GPT, and Argon on macOS, Linux (Fedora/Ubuntu), and Windows.",
   "logo": "assets/logo.png"
 }

@@ -1,7 +1,7 @@
 {
   "name": "antigravity-account-switcher",
-  "version": "1.2.3",
-  "description": "The first native in-app Multi-Account & Live Quota Switcher for Google Antigravity 2.0",
+  "version": "1.3.0",
+  "description": "Multi-Account & Live Quota Switcher for Google Antigravity (Desktop, IDE & agy CLI) with support for macOS, Linux (Fedora/Ubuntu), and Windows",
   "main": "src/sidecar/index.js",
   "bin": {
     "antigravity-switcher": "bin/cli.js",
@@ -11,6 +11,7 @@
     "bin",
     "src",
     "sidecars",
+    "skills",
     "scripts",
     "assets",
     "plugin.json",
