@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Official 1-Line Native Windows Installer for Antigravity Account Switcher.
 .DESCRIPTION
     Zero-dependency installer. Automatically downloads, links, and hot-reloads
     Antigravity Account Switcher into Google Antigravity 2.0 without requiring npm or git.
 .EXAMPLE
-    irm https://raw.githubusercontent.com/omid-io/antigravity-account-switcher/master/install.ps1 | iex
+    irm https://raw.githubusercontent.com/sohrabezzati/antigravity-account-switcher/master/install.ps1 | iex
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ Write-Host "  ──────────────────────
 
 $pluginsDir = Join-Path $HOME ".gemini\config\plugins"
 $targetDir  = Join-Path $pluginsDir "antigravity-account-switcher"
-$repoZipUrl = "https://github.com/omid-io/antigravity-account-switcher/archive/refs/heads/master.zip"
+$repoZipUrl = "https://github.com/sohrabezzati/antigravity-account-switcher/archive/refs/heads/master.zip"
 $tempZip    = Join-Path $env:TEMP "antigravity-account-switcher-master.zip"
 $tempExtract= Join-Path $env:TEMP "agy-switcher-extract"
 

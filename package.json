@@ -14,6 +14,8 @@
     "skills",
     "scripts",
     "assets",
+    "install.sh",
+    "install.ps1",
     "plugin.json",
     "package.json",
     "README.md",
@@ -28,11 +30,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/omid-io/antigravity-account-switcher.git"
+    "url": "git+https://github.com/sohrabezzati/antigravity-account-switcher.git"
   },
-  "homepage": "https://github.com/omid-io/antigravity-account-switcher#readme",
+  "homepage": "https://github.com/sohrabezzati/antigravity-account-switcher#readme",
   "bugs": {
-    "url": "https://github.com/omid-io/antigravity-account-switcher/issues"
+    "url": "https://github.com/sohrabezzati/antigravity-account-switcher/issues"
   },
   "keywords": [
     "antigravity",
