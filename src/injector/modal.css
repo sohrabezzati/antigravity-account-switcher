@@ -290,7 +290,7 @@ body.vscode-dark #agy-account-switcher-popover {
   position: fixed;
   bottom: 12px;
   left: 165px;
-  width: 388px;
+  width: 440px;
   max-width: calc(100vw - 20px);
   max-height: calc(100vh - 40px);
   will-change: transform, opacity;
@@ -691,12 +691,49 @@ body.dark .agy-version-tag {
 
 /* Accounts Cards List */
 .agy-popover-body {
-  padding: 12px 16px;
-  max-height: min(500px, calc(100vh - 130px));
-  overflow-y: auto;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: calc(100vh - 140px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Custom Sleek Scrollbar */
+.agy-popover-body::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.agy-popover-body::-webkit-scrollbar-track {
+  background: transparent !important;
+  margin: 6px 0 !important;
+}
+
+.agy-popover-body::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4) !important;
+  border-radius: 8px !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.agy-popover-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7) !important;
+}
+
+body.theme-dark .agy-popover-body::-webkit-scrollbar-thumb,
+body.dark .agy-popover-body::-webkit-scrollbar-thumb,
+body.vscode-dark .agy-popover-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+
+body.theme-dark .agy-popover-body::-webkit-scrollbar-thumb:hover,
+body.dark .agy-popover-body::-webkit-scrollbar-thumb:hover,
+body.vscode-dark .agy-popover-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4) !important;
 }
 
 /* =========================================================================
@@ -794,8 +831,27 @@ body.dark .agy-cockpit-avatar {
 .agy-cockpit-name-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agy-cockpit-name-left {
+  display: flex;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 1;
+}
+
+.agy-cockpit-display-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--agy-text-main);
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agy-cockpit-username {
@@ -806,6 +862,48 @@ body.dark .agy-cockpit-avatar {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.agy-cockpit-email-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 1px;
+}
+
+.agy-cockpit-full-email-text {
+  font-size: 11px;
+  color: var(--agy-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.agy-copy-email-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--agy-text-muted);
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.agy-copy-email-btn:hover {
+  color: var(--agy-text-main);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+body.theme-dark .agy-copy-email-btn:hover,
+body.dark .agy-copy-email-btn:hover,
+body.vscode-dark .agy-copy-email-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .agy-foil-badge {
@@ -835,10 +933,6 @@ body.dark .agy-cockpit-avatar {
   background: var(--agy-track-bg);
   color: var(--agy-text-muted);
   border: 1px solid var(--agy-border);
-}
-
-.agy-cockpit-full-email {
-  display: none;
 }
 
 /* Cockpit Telemetry HUD */
@@ -1162,15 +1256,58 @@ body.dark .agy-standby-micro-avatar {
   box-shadow: 0 0 5px #f43f5e;
 }
 
-.agy-standby-username {
-  font-size: 13px;
+.agy-standby-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.agy-standby-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agy-standby-display-name {
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--agy-text-main);
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
+  max-width: 170px;
+}
+
+.agy-standby-username {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--agy-text-main);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+.agy-standby-email-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agy-standby-full-email {
+  font-size: 10.5px;
+  color: var(--agy-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .agy-mini-badge {
@@ -2260,4 +2397,42 @@ body.vscode-dark .agy-model-badge.argon {
   .agy-update-pill {
     animation: none !important;
   }
+}
+
+/* Toast Notification System */
+.agy-toast-notification {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 1000000;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agy-toast-notification.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.agy-toast-notification.success {
+  border-left: 3px solid #10b981;
+}
+
+.agy-toast-notification.error {
+  border-left: 3px solid #ef4444;
 }

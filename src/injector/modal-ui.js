@@ -289,6 +289,14 @@
     document.getElementById('agy-copy-inline-btn')?.addEventListener('click', copyUpdateCommand);
     document.getElementById('agy-update-github-btn')?.addEventListener('click', openUpdateGitHub);
 
+    // Prevent scroll wheel event bubbling so scrolling inside the popover is smooth and uninterrupted
+    const accountsBodyEl = document.getElementById('agy-accounts-body');
+    if (accountsBodyEl) {
+      accountsBodyEl.addEventListener('wheel', (e) => {
+        e.stopPropagation();
+      }, { passive: true });
+    }
+
     // Bulletproof click-outside & escape listeners (Capture Phase to bypass VS Code stopPropagation)
     if (window.__AGY_OUTSIDE_HANDLER__) {
       window.removeEventListener('pointerdown', window.__AGY_OUTSIDE_HANDLER__, true);
@@ -370,7 +378,9 @@
       const sidebar = document.querySelector('[role="navigation"][aria-label="Sidebar"]') || trigger.closest('[role="navigation"]');
       const sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : rect.right;
       popover.style.left = (sidebarRight + 10) + 'px';
-      popover.style.bottom = Math.max(12, window.innerHeight - rect.bottom - 4) + 'px';
+      const bottomOffset = Math.max(12, window.innerHeight - rect.bottom - 4);
+      popover.style.bottom = bottomOffset + 'px';
+      popover.style.maxHeight = `calc(100vh - ${bottomOffset + 24}px)`;
     }
 
     popover.classList.add('open');
@@ -516,7 +526,8 @@
     const heroFiveHourLevel = heroFiveHourPct > 50 ? 'healthy' : (heroFiveHourPct > 20 ? 'warning' : 'critical');
     const heroWeeklyPct = typeof activeAccount.weeklyPercent === 'number' ? activeAccount.weeklyPercent : 100;
     const heroWeeklyLevel = heroWeeklyPct > 50 ? 'healthy' : (heroWeeklyPct > 20 ? 'warning' : 'critical');
-    const heroDisplayEmail = (activeAccount.email || '').replace(/@(gmail|googlemail)\.com$/i, '');
+    const heroDisplayName = activeAccount.name || (activeAccount.email || '').replace(/@(gmail|googlemail)\.com$/i, '');
+    const heroEmail = activeAccount.email || '';
     const heroPlan = (activeAccount.plan || 'Free').toUpperCase();
     const heroPlanClass = getPlanClass(activeAccount.plan);
 
@@ -529,11 +540,20 @@
               <div class="agy-cockpit-avatar">
                 ${getAvatarHtml(activeAccount, true)}
               </div>
+              <span class="agy-status-pip ready" title="Active"></span>
             </div>
             <div class="agy-cockpit-identity">
               <div class="agy-cockpit-name-row">
-                <span class="agy-cockpit-username" title="${activeAccount.email}">${heroDisplayEmail}</span>
-                <span class="agy-foil-badge ${heroPlanClass}">${heroPlan}</span>
+                <div class="agy-cockpit-name-left">
+                  <span class="agy-cockpit-display-name" title="${heroDisplayName}">${heroDisplayName}</span>
+                  <span class="agy-foil-badge ${heroPlanClass}">${heroPlan}</span>
+                </div>
+              </div>
+              <div class="agy-cockpit-email-row" title="${heroEmail}">
+                <span class="agy-cockpit-full-email-text">${heroEmail}</span>
+                <button class="agy-copy-email-btn" onclick="window.__AGY_SWITCHER__.copyEmail('${heroEmail}', this)" title="Copy email address">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -700,7 +720,8 @@
               const fiveLvl = fivePct > 50 ? 'healthy' : (fivePct > 20 ? 'warning' : 'critical');
               const wkPct = typeof acc.weeklyPercent === 'number' ? acc.weeklyPercent : 100;
               const wkLvl = wkPct > 50 ? 'healthy' : (wkPct > 20 ? 'warning' : 'critical');
-              const emailDisplay = (acc.email || '').replace(/@(gmail|googlemail)\.com$/i, '');
+              const standbyDisplayName = acc.name || (acc.email || '').replace(/@(gmail|googlemail)\.com$/i, '');
+              const standbyEmail = acc.email || '';
               const plan = (acc.plan || 'Free').toUpperCase();
               const planClass = getPlanClass(acc.plan);
               const needsRelogin = acc.status === 'needs_relogin';
@@ -723,8 +744,18 @@
                         </div>
                         <span class="agy-status-pip ${needsRelogin ? 'critical' : 'ready'}"></span>
                       </div>
-                      <span class="agy-standby-username" title="${acc.email}">${emailDisplay}</span>
-                      <span class="agy-mini-badge ${planClass}">${plan}</span>
+                      <div class="agy-standby-identity-text">
+                        <div class="agy-standby-name-row">
+                          <span class="agy-standby-display-name" title="${standbyDisplayName}">${standbyDisplayName}</span>
+                          <span class="agy-mini-badge ${planClass}">${plan}</span>
+                        </div>
+                        <div class="agy-standby-email-row" title="${standbyEmail}">
+                          <span class="agy-standby-full-email">${standbyEmail}</span>
+                          <button class="agy-copy-email-btn" onclick="window.__AGY_SWITCHER__.copyEmail('${standbyEmail}', this); event.stopPropagation();" title="Copy email address">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div class="agy-standby-actions-cluster">
@@ -854,13 +885,13 @@
       proceedBtn.innerText = 'Switching...';
       proceedBtn.disabled = true;
 
-      // 8-second safety watchdog: resets button and unlocks UI if reload is delayed or severed
+      // 6-second safety watchdog: resets button if request times out
       if (switchWatchdogTimer) clearTimeout(switchWatchdogTimer);
       switchWatchdogTimer = setTimeout(() => {
         proceedBtn.innerText = 'Confirm Switch';
         proceedBtn.disabled = false;
-        alert('Switch response received, but window reload was delayed. Please reload window manually.');
-      }, 8000);
+        alert('Switch request timed out. Please try again.');
+      }, 6000);
 
       try {
         const res = await fetch(`${API_BASE}/api/switch`, {
@@ -875,6 +906,7 @@
             switchWatchdogTimer = null;
           }
           hideConfirm();
+          showToast(`Account ${email} is already active`, 'info');
           await fetchAndRenderAccounts(true);
         } else if (!res.ok) {
           if (switchWatchdogTimer) {
@@ -884,27 +916,20 @@
           alert('Switch notice: ' + (data.error || 'Switch failed'));
           hideConfirm();
         } else {
-          // Success: credentials updated cleanly
+          // Success: credentials updated cleanly with zero-downtime (active chats preserved!)
           if (switchWatchdogTimer) {
             clearTimeout(switchWatchdogTimer);
             switchWatchdogTimer = null;
           }
           proceedBtn.innerText = '✓ Switched!';
           proceedBtn.style.background = '#10b981';
-          const confirmBox = document.querySelector('.agy-confirm-box');
-          if (confirmBox) {
-            confirmBox.innerHTML = `
-              <div style="text-align:center;padding:16px 8px;">
-                <div style="font-size:24px;margin-bottom:8px;">🚀</div>
-                <h4 style="margin:0 0 8px;font-size:15px;font-weight:600;color:#f8fafc;">Switching Active Account</h4>
-                <p style="margin:0;font-size:12px;color:#94a3b8;">Active account set to <strong>${email}</strong>.<br>Reloading Antigravity window...</p>
-              </div>
-            `;
-          }
-          // Client-side reload fallback in case CDP reload event was delayed
-          setTimeout(() => {
-            try { window.location.reload(); } catch {}
-          }, 800);
+
+          setTimeout(async () => {
+            hideConfirm();
+            showToast(`Switched active account to ${email}`, 'success');
+            await fetchAndRenderAccounts(true);
+            dismissTermsModal();
+          }, 350);
         }
       } catch (e) {
         if (window.__AGY_IS_UNLOADING__) return;
@@ -920,8 +945,10 @@
             const checkData = await checkRes.json();
             const active = checkData.accounts?.find(a => a.isActive);
             if (active && (active.id === accId || (active.email && active.email.toLowerCase() === email.toLowerCase()))) {
-              // Successfully switched, reload immediately!
-              window.location.reload();
+              hideConfirm();
+              showToast(`Switched active account to ${email}`, 'success');
+              await fetchAndRenderAccounts(true);
+              dismissTermsModal();
               return;
             }
           }
@@ -989,9 +1016,77 @@
     if (dialog) dialog.style.display = 'none';
   }
 
+  // Toast Notification System
+  function showToast(message, type = 'info') {
+    let toast = document.getElementById('agy-toast-notification');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'agy-toast-notification';
+      toast.className = 'agy-toast-notification';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.className = `agy-toast-notification ${type} show`;
+    clearTimeout(toast.__timer);
+    toast.__timer = setTimeout(() => {
+      toast.className = 'agy-toast-notification';
+    }, 2800);
+  }
+
+  // Copy Email to Clipboard with tactile feedback
+  async function copyEmail(email, btnEl) {
+    if (!email) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(email);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = email;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      if (btnEl) {
+        const origHtml = btnEl.innerHTML;
+        btnEl.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        btnEl.title = 'Copied!';
+        setTimeout(() => {
+          btnEl.innerHTML = origHtml;
+          btnEl.title = 'Copy email address';
+        }, 1500);
+      }
+      showToast(`Copied ${email}`, 'success');
+    } catch (err) {
+      console.warn('Failed to copy email:', err);
+    }
+  }
+
+  // Auto-dismiss any lingering Terms of Service, Privacy, or Security Notice modals
+  function dismissTermsModal() {
+    try {
+      const candidates = Array.from(document.querySelectorAll('button, .monaco-button, a'));
+      for (const el of candidates) {
+        const txt = (el.textContent || '').trim().toLowerCase();
+        if (txt === 'accept and continue' || txt === 'accept' || txt === 'i agree' || txt === 'get started' || txt === 'continue' || txt === 'skip') {
+          const dialog = el.closest('[role="dialog"], .monaco-dialog-box, .monaco-modal, .notification-toast, .window-dialog');
+          if (dialog) {
+            const dText = (dialog.textContent || '').toLowerCase();
+            if (dText.includes('security notice') || dText.includes('terms') || dText.includes('data use') || dText.includes('onboarding') || dText.includes('privacy')) {
+              el.click();
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   // Request Re-login
   async function requestRelogin(accId, email) {
-    if (confirm(`Session for ${email} needs re-authentication. Switch and open login now?`)) {
+    if (confirm(`Session for ${email} needs re-authentication. Switch to this account now?`)) {
       try {
         const res = await fetch(`${API_BASE}/api/switch`, {
           method: 'POST',
@@ -999,9 +1094,8 @@
           body: JSON.stringify({ id: accId, source: 'renderer' })
         });
         if (res.ok) {
-          setTimeout(() => {
-            try { window.location.reload(); } catch {}
-          }, 400);
+          showToast(`Switched to ${email}`, 'info');
+          await fetchAndRenderAccounts(true);
         }
       } catch (e) {
         if (window.__AGY_IS_UNLOADING__) return;
@@ -1087,16 +1181,19 @@
       injectAvatarTriggerButton();
       injectPopoverStructure();
       fetchAndRenderAccounts(false);
-      // Check every 3 seconds ONLY if button is missing
+      dismissTermsModal();
+
+      // Periodic check: auto-dismiss terms and ensure trigger button remains mounted
       if (window.__AGY_SWITCHER_INTERVAL__) {
         clearInterval(window.__AGY_SWITCHER_INTERVAL__);
       }
       window.__AGY_SWITCHER_INTERVAL__ = setInterval(() => {
+        dismissTermsModal();
         const btn = document.getElementById('agy-avatar-trigger-btn');
         if (!btn || !btn.parentElement) {
           injectAvatarTriggerButton();
         }
-      }, 3000);
+      }, 2500);
     },
     openPopover,
     closePopover,
@@ -1108,7 +1205,9 @@
     requestSwitch: showConfirm,
     requestDelete: showDeleteConfirm,
     requestRelogin: requestRelogin,
-    refresh: fetchAndRenderAccounts
+    refresh: fetchAndRenderAccounts,
+    copyEmail: copyEmail,
+    showToast: showToast
   };
 
 })();

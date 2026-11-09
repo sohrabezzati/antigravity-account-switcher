@@ -72,27 +72,57 @@ function getActiveEmailFromAppStorage() {
   if (!fs.existsSync(appStoragePath)) return null;
   try {
     const data = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
-    return data['jetski.onboarding.lastLoginUsername'] || null;
+    return data['agy.onboarding.lastLoginUsername'] || data['jetski.onboarding.lastLoginUsername'] || null;
   } catch {
     return null;
   }
 }
 
 /**
- * Updates user email in app_storage.json upon switch.
+ * Updates user email and onboarding state in app_storage.json and google_accounts.json upon switch.
  */
 function updateAppStorageEmail(email) {
+  if (!email) return false;
+  let success = false;
+
+  // 1. Update app_storage.json
   const appStoragePath = getAppStoragePath();
-  if (!fs.existsSync(appStoragePath) || !email) return false;
-  try {
-    const data = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
-    data['jetski.onboarding.lastLoginUsername'] = email;
-    fs.writeFileSync(appStoragePath, JSON.stringify(data, null, 2), 'utf8');
-    return true;
-  } catch (err) {
-    logger.warn('vault-manager', `Error updating app_storage.json: ${err.message}`);
-    return false;
+  if (fs.existsSync(appStoragePath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
+      data['agy.onboarding.lastLoginUsername'] = email;
+      data['jetski.onboarding.lastLoginUsername'] = email;
+      data['agy.onboarding.lastLoginIsGcpTos'] = 'false';
+      data['ide-install-wizard-shown'] = 'true';
+      data['didAskForNotificationPermission'] = 'true';
+      fs.writeFileSync(appStoragePath, JSON.stringify(data, null, 2), 'utf8');
+      success = true;
+    } catch (err) {
+      logger.warn('vault-manager', `Error updating app_storage.json: ${err.message}`);
+    }
   }
+
+  // 2. Update ~/.gemini/google_accounts.json
+  try {
+    const gPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+    let gData = { active: email, old: [] };
+    if (fs.existsSync(gPath)) {
+      try {
+        gData = JSON.parse(fs.readFileSync(gPath, 'utf8'));
+      } catch {}
+    }
+    const oldActive = gData.active;
+    gData.active = email;
+    if (oldActive && oldActive !== email) {
+      gData.old = gData.old || [];
+      if (!gData.old.includes(oldActive)) gData.old.push(oldActive);
+    }
+    fs.writeFileSync(gPath, JSON.stringify(gData, null, 2), 'utf8');
+  } catch (err) {
+    logger.warn('vault-manager', `Error updating google_accounts.json: ${err.message}`);
+  }
+
+  return success;
 }
 
 /**

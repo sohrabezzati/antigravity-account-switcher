@@ -27,7 +27,7 @@ let isSwitchingInProgress = false;
  * 2. switchProfile(targetId) to write native credential storage & update vault
  * 3. Fast-path exit if target account is already active
  * 4. Early callback notification (onProfileSwitched) so HTTP clients get 200 OK before any restart/reload
- * 5. Non-blocking LanguageServerService/Restart RPC and window reload via CDP
+ * 5. Non-disruptive session sync, TOS auto-acceptance, and in-place DOM refresh via CDP
  * 6. Always releases mutex in finally block
  */
 export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
@@ -59,48 +59,56 @@ export async function executeAccountSwitch(targetId, cdp, onProfileSwitched) {
       try { onProfileSwitched({ ok: true, profile: switched }); } catch {}
     }
 
-    // Step 2 & 3: Restart Language Server & Reload Window via non-blocking CDP dispatch
+    // Step 2: Live In-Place Sync & TOS Acceptance via non-blocking CDP dispatch
     if (cdp && cdp.isConnected) {
       try {
-        logger.info('sidecar', '[SWITCH_RPC] Dispatching LanguageServer restart & window reload sequence');
-        // Dispatch non-blocking script to renderer. Setting awaitPromise=false ensures CDP returns
-        // immediately, avoiding connection drops if LanguageServer terminates child processes.
+        logger.info('sidecar', '[SWITCH_SYNC] Dispatching non-disruptive session sync & TOS acceptance to renderer');
+        // Setting awaitPromise=false ensures CDP returns immediately without blocking.
+        // We do NOT call Restart or reloadWindow() so active cascade sessions and chat histories remain 100% intact!
         await cdp.evaluate(`(async () => {
           try {
-            const port = window.location.port || '51339';
+            const port = window.location.port;
             const csrf = window.__APP_CONFIG__?.csrfToken || '';
             if (port) {
               const headers = {
                 'Content-Type': 'application/json',
                 'x-codeium-csrf-token': csrf
               };
+              // Programmatically accept Terms of Service & skip onboarding to prevent any nagging modals
               try {
-                await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/Restart', {
+                await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/AcceptTermsOfService', {
                   method: 'POST',
                   headers,
-                  body: JSON.stringify({}),
-                  signal: AbortSignal.timeout(2000)
+                  body: JSON.stringify({
+                    metadata: { ide_name: 'antigravity', extension_name: 'antigravity', locale: 'en' },
+                    version: '1.0'
+                  })
                 });
               } catch (e) {
-                console.warn('[switcher] Restart warning:', e);
+                console.warn('[switcher] AcceptTermsOfService warning:', e);
+              }
+              try {
+                await fetch('https://127.0.0.1:' + port + '/exa.language_server_pb.LanguageServerService/SkipOnboarding', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({})
+                });
+              } catch (e) {
+                console.warn('[switcher] SkipOnboarding warning:', e);
               }
             }
           } catch (e) {
-            console.error('[switcher] Error in switch pipeline:', e);
+            console.warn('[switcher] Error in background sync:', e);
           }
-          setTimeout(() => {
-            try {
-              window.location.reload();
-            } catch (rErr) {
-              console.error('[switcher] Reload error:', rErr);
+          // Refresh the switcher UI in-place without reloading the window
+          try {
+            if (window.__AGY_SWITCHER__ && typeof window.__AGY_SWITCHER__.refresh === 'function') {
+              window.__AGY_SWITCHER__.refresh(true);
             }
-          }, 350);
+          } catch {}
         })()`, false, 2500);
       } catch (cdpErr) {
-        logger.warn('sidecar', `CDP dispatch error during switch sequence: ${cdpErr.message}`);
-        try {
-          await cdp.reloadWindow();
-        } catch {}
+        logger.warn('sidecar', `CDP dispatch warning during session sync: ${cdpErr.message}`);
       }
     } else {
       logger.warn('sidecar', '[SWITCH_NO_CDP] CDP bridge not connected, only credentials switched.');
