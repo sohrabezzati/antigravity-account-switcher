@@ -7,9 +7,9 @@
     <a href="README.md">English</a> · <strong>فارسی</strong>
   </p>
   <p>
-    <a href="https://github.com/omid-io/antigravity-account-switcher"><img src="https://img.shields.io/github/last-commit/omid-io/antigravity-account-switcher?style=flat-square&label=آخرین%20کامیت" alt="Last commit" /></a>
-    <a href="https://github.com/omid-io/antigravity-account-switcher/blob/master/LICENSE"><img src="https://img.shields.io/github/license/omid-io/antigravity-account-switcher?style=flat-square" alt="MIT License" /></a>
-    <img src="https://img.shields.io/badge/سیستم%20عامل-ویندوز-0078D6?style=flat-square&logo=windows11&logoColor=white" alt="Windows" />
+    <a href="https://github.com/sohrabezzati/antigravity-account-switcher"><img src="https://img.shields.io/github/last-commit/sohrabezzati/antigravity-account-switcher?style=flat-square&label=آخرین%20کامیت" alt="Last commit" /></a>
+    <a href="https://github.com/sohrabezzati/antigravity-account-switcher/blob/master/LICENSE"><img src="https://img.shields.io/github/license/sohrabezzati/antigravity-account-switcher?style=flat-square" alt="MIT License" /></a>
+    <img src="https://img.shields.io/badge/سیستم%20عامل-ویندوز%20%7C%20مک%20%7C%20لینوکس-0078D6?style=flat-square" alt="Cross-Platform" />
     <img src="https://img.shields.io/badge/Node.js-22.4%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.4 or newer" />
   </p>
   <p>
@@ -72,21 +72,45 @@ npx antigravity-account-switcher update
 npx antigravity-account-switcher status
 ```
 
-### روش ۲: نصب از سورس‌کد گیت‌هاب
+### روش ۲: نصب گام‌به‌گام از سورس‌کد (Source Code)
 
-```powershell
-git clone https://github.com/omid-io/antigravity-account-switcher.git
+نصب مستقیم از سورس‌کد برای توسعه‌دهندگان، اعمال شخصی‌سازی‌ها، یا محیط‌های آفلاین عالی است:
+
+#### ۱. پیش‌نیازها
+- **گیت (Git)** و **Node.js 22.4+** یا جدیدتر.
+- نصب حداقل یک‌بار نرم‌افزار Google Antigravity Desktop یا Antigravity IDE.
+- در لینوکس: `libsecret` (فدورا: `sudo dnf install libsecret` | اوبونتو: `sudo apt install libsecret-tools gnome-keyring`).
+
+#### ۲. کلون مخزن گیت‌هاب
+```bash
+git clone https://github.com/sohrabezzati/antigravity-account-switcher.git
 cd antigravity-account-switcher
+```
+
+#### ۳. نصب وابستگی‌ها و اجرای تست‌ها
+```bash
+npm install
+npm test
+```
+
+#### ۴. استقرار خودکار افزونه در آنتی‌گرویتی
+```bash
 npm run install-plugin
 ```
 
-این دستور افزونه را در مسیر زیر لینک و مستقر می‌کند:
-```text
-%USERPROFILE%\.gemini\config\plugins\antigravity-account-switcher
+این دستور به شکل خودکار:
+- افزونه را در مسیر `~/.gemini/config/plugins/antigravity-account-switcher` (یا `%USERPROFILE%\.gemini\...` در ویندوز) مستقر می‌سازد.
+- مهارت `account-switcher` را برای `antigravity-cli` فعال می‌کند.
+- پنجره باز Antigravity را بدون ری‌استارت با هات‌ریلود زنده فعال می‌کند.
+
+#### ۵. آپدیت از سورس‌کد
+```bash
+git pull origin master
+npm run install-plugin
 ```
 
-جهت حذف کامل افزونه:
-```powershell
+#### ۶. حذف افزونه از سورس‌کد
+```bash
 npm run uninstall-plugin
 ```
 

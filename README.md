@@ -91,17 +91,87 @@ npx antigravity-account-switcher status
 
 ---
 
-### Option 3: Install from Source
+### Option 3: Step-by-Step Installation from Source Code
 
+Installing directly from source code is ideal if you want to inspect the code, modify styles or behaviors, contribute improvements, or install in offline/air-gapped environments.
+
+#### 1. System Requirements & Prerequisites
+Before installing, make sure your system has:
+- **Git**: [git-scm.com](https://git-scm.com/) (`git --version`)
+- **Node.js 22.4+** (or Node 18+): [nodejs.org](https://nodejs.org/) (`node -v && npm -v`)
+- **Google Antigravity Desktop** or **Antigravity IDE**: Installed and signed in at least once.
+- **Platform Credential Tool**:
+  - **macOS**: Built-in macOS Keychain (no extra software needed).
+  - **Windows**: Built-in Windows Credential Manager (no extra software needed).
+  - **Linux (Fedora/RHEL)**: `sudo dnf install libsecret`
+  - **Linux (Ubuntu/Debian)**: `sudo apt update && sudo apt install libsecret-tools gnome-keyring`
+  - **Linux (Arch)**: `sudo pacman -S libsecret`
+
+#### 2. Clone the Repository
+Open your terminal (or PowerShell on Windows) and clone the repository:
 ```bash
 git clone https://github.com/sohrabezzati/antigravity-account-switcher.git
 cd antigravity-account-switcher
+```
+
+#### 3. Install Development Dependencies
+The project is built on native Node.js APIs and has **zero third-party production dependencies**. To install development/test tooling:
+```bash
+npm install
+```
+
+#### 4. Run the Test Suite (Recommended)
+Verify that credential storage, multi-model quota parsers, platform path resolution, and route restoration pass cleanly on your operating system:
+```bash
+npm test
+```
+All 14 tests should pass with green checkmarks.
+
+#### 5. Deploy the Plugin to Antigravity
+Deploy the plugin into your Antigravity environment:
+```bash
 npm run install-plugin
 ```
 
-The plugin deploys automatically to your local Antigravity plugins directory:
-- **macOS / Linux**: `~/.gemini/config/plugins/antigravity-account-switcher`
-- **Windows**: `%USERPROFILE%\.gemini\config\plugins\antigravity-account-switcher`
+**What happens during this step:**
+1. The script deploys the plugin into your user config directory:
+   - **macOS / Linux**: `~/.gemini/config/plugins/antigravity-account-switcher`
+   - **Windows**: `%USERPROFILE%\.gemini\config\plugins\antigravity-account-switcher`
+2. Preserves your existing saved accounts vault (`profiles.json`) if previously installed.
+3. Automatically mounts the `account-switcher` skill for `antigravity-cli` (`agy`).
+4. Detects any running Antigravity window via Chrome DevTools Protocol (CDP) and **triggers an immediate live hot-reload**—the avatar button will appear opposite the Settings icon without needing a full application restart!
+
+#### 6. Link the CLI Globally (Optional)
+To run the CLI tool from anywhere in your shell:
+```bash
+npm link
+```
+You can now run commands globally:
+```bash
+antigravity-switcher list
+antigravity-switcher quota
+antigravity-switcher status
+```
+*(Or invoke locally anytime with `node bin/cli.js <command>`)*.
+
+#### 7. Verify Live Installation
+Check that the sidecar, platform paths, and vault are connected:
+```bash
+node bin/cli.js status
+```
+
+#### 8. Updating from Source Code
+To pull the latest enhancements and re-deploy:
+```bash
+git pull origin master
+npm run install-plugin
+```
+
+#### 9. Uninstalling from Source
+To remove the installed plugin from Antigravity:
+```bash
+npm run uninstall-plugin
+```
 
 ---
 
